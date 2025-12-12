@@ -1,0 +1,374 @@
+/* client/style.css */
+
+/* --- Dark Mode Variables (Matching Screenshots) --- */
+:root {
+    /* Main Dark Theme Colors */
+    --app-bg: #111111; /* Very dark background */
+    --sidebar-bg: #222222; /* Sidebar background (slightly lighter) */
+    --card-bg: #2D2E30; /* Central card background */
+    --input-bg: #3C3E42; /* Input field background */
+
+    /* Accent Colors */
+    --primary-color: #3B82F6; /* Blue accent for buttons and highlights */
+    --primary-light: #5B95F8;
+    --logo-color: #9a67d3; /* Yellow/Orange logo color */
+    
+    /* Text and Status */
+    --text-color: #F8F8F8; /* Light text */
+    --light-text: #B0B0B0;
+    --error-color: #86ddf6; /* Red for errors (like the bar) */
+    --success-color: #27AE60; 
+    --border-color: #444444; 
+    --shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+body {
+    font-family: 'Roboto', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--app-bg);
+    color: var(--text-color);
+    line-height: 1.6;
+    height: 100vh;
+    overflow: hidden; /* Hide scrollbar when using fixed layout */
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- APP CONTAINER & LAYOUT --- */
+.app-container {
+    display: flex;
+    height: 100vh;
+}
+
+/* --- Sidebar Styling --- */
+.sidebar {
+    width: 250px;
+    background-color: var(--sidebar-bg);
+    padding: 20px 0;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
+}
+
+.logo {
+    color: var(--logo-color);
+    margin: 0 25px 40px;
+    font-size: 1.8em;
+    font-weight: 700;
+}
+
+.sidebar-nav {
+    padding: 0 10px;
+}
+
+.sidebar-btn {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 12px 20px;
+    margin-bottom: 8px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 1em;
+    color: var(--light-text);
+    border-radius: 8px;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.sidebar-btn .icon {
+    font-size: 1em;
+    margin-right: 15px;
+}
+
+.sidebar-btn:hover {
+    background-color: #333333;
+}
+
+.sidebar-btn.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+/* --- Main Content Area (For centering the card) --- */
+.main-content {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+/* --- Central Content Card (Upload/Retrieve) --- */
+.content-card {
+    background-color: var(--card-bg);
+    padding: 40px;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    text-align: center;
+    width: 100%;
+    max-width: 450px;
+}
+
+.card-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.card-header i {
+    font-size: 2.5em;
+    color: var(--light-text);
+    margin-bottom: 15px;
+}
+
+.card-header h2 {
+    font-size: 1.4em;
+    margin: 0;
+    color: var(--text-color);
+}
+
+.card-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* --- Input Field Styling --- */
+.card-form input[type="text"],
+.card-form input[type="password"] {
+    width: 100%;
+    padding: 15px 20px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1em;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+
+.card-form input:focus {
+    border-color: var(--primary-color);
+    outline: none;
+}
+
+/* --- Custom File Input (Matching Screenshot) --- */
+.custom-file-input-group {
+    display: flex;
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 50px;
+}
+
+.custom-file-input-group input[type="file"] {
+    display: none; /* Hide the native input */
+}
+
+.file-label {
+    background-color: var(--border-color);
+    color: var(--text-color);
+    padding: 15px 20px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+    flex-shrink: 0; /* Keep the button fixed size */
+    line-height: 20px; /* Align text vertically */
+}
+
+.file-label:hover {
+    background-color: #555555;
+}
+
+.file-name-display {
+    background-color: var(--input-bg);
+    color: var(--light-text);
+    padding: 15px 15px;
+    flex-grow: 1; /* Take up remaining space */
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 20px; /* Align text vertically */
+}
+
+/* --- Action Button Styling --- */
+.action-btn {
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1em;
+    font-weight: 500;
+    transition: background-color 0.2s;
+    margin-top: 10px;
+}
+
+.primary-btn {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.primary-btn:hover {
+    background-color: var(--primary-light);
+}
+
+/* --- Uploading State --- */
+.uploading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--primary-color);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 10px;
+}
+
+.spinner {
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top: 3px solid #ffffff;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* --- Retrieval Error Bar (Matching Screenshot) --- */
+.status-message {
+    padding: 15px;
+    border-radius: 4px;
+    text-align: center;
+    margin-top: 20px;
+}
+
+.status-message p {
+    margin: 0;
+    color: var(--error-color); /* Error text color */
+    font-weight: 500;
+}
+
+/* The red bar shown in the screenshot is likely a wide error message, 
+   but we'll implement a clean error box here */
+.error-message-bar {
+    width: 100%;
+    height: 8px; /* Height matching the bar */
+    background-color: var(--error-color);
+    margin-top: 20px;
+    border-radius: 4px;
+}
+
+
+/* ------------------------------------------- */
+/* --- CODE DISPLAY VIEW (Full-Screen) --- */
+/* ------------------------------------------- */
+.code-view-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--app-bg); 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.code-box {
+    background-color: var(--card-bg);
+    padding: 40px 60px;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    text-align: center;
+    max-width: 500px;
+}
+
+.code-title {
+    color: var(--primary-color);
+    font-size: 1.8em;
+    margin-bottom: 20px;
+}
+
+.code-instruction {
+    color: var(--light-text);
+    margin-bottom: 30px;
+}
+
+.final-code {
+    display: block;
+    font-size: 4.5em; 
+    font-weight: 700;
+    letter-spacing: 10px;
+    color: var(--primary-color); 
+    margin: 20px 0;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: var(--input-bg); 
+}
+
+.code-expiry-note {
+    font-size: 0.9em;
+    color: var(--error-color); 
+    margin-bottom: 30px;
+}
+
+.done-btn {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 15px 50px;
+    border: none;
+    border-radius: 30px; 
+    cursor: pointer;
+    font-size: 1.2em;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.done-btn:hover {
+    background-color: var(--primary-light);
+}
+
+/* --- Responsive Adjustments --- */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        box-shadow: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .sidebar-nav {
+        display: flex;
+        justify-content: center;
+        padding: 0 15px;
+    }
+    .sidebar-btn {
+        flex: 1;
+        text-align: center;
+        justify-content: center;
+    }
+    .logo {
+        text-align: center;
+        margin-bottom: 15px;
+    }
+    .main-content {
+        padding: 30px 15px;
+    }
+    .content-card {
+        padding: 25px;
+    }
+}
