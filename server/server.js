@@ -1,4 +1,4 @@
-// server.js (Final Fix: .dat extension)
+// server.js (Final Production Version with CORS Fix)
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -20,11 +20,20 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// ---------- Middleware ----------
+// ---------- Middleware (UPDATED) ----------
 app.use(express.json());
+
+// ✅ FIX: Allow Frontend to read the filename header
 app.use(cors({
-  origin: [process.env.CLIENT_ORIGIN, "http://localhost:3000", "http://127.0.0.1:5500"], 
-  credentials: true
+  origin: [
+      process.env.CLIENT_ORIGIN, 
+      "http://localhost:3000", 
+      "http://127.0.0.1:5500", 
+      "https://quantc.vercel.app", 
+      "https://quantc.netlify.app"
+  ], 
+  credentials: true,
+  exposedHeaders: ['Content-Disposition'] // This line is crucial for correct filenames
 }));
 
 // ---------- Database ----------
