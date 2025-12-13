@@ -8,8 +8,9 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const cloudinary = require('cloudinary').v2; // Import Cloudinary
-const axios = require('axios'); // Needed to download from Cloudinary
+const cloudinary = require('cloudinary').v2;
+
+// ❌ DELETED: const axios = require('axios'); <-- This was causing your crash
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,7 +25,6 @@ cloudinary.config({
 // ---------- Middleware ----------
 app.use(express.json());
 app.use(cors({
-  // Allow your Vercel frontend domain here
   origin: [process.env.CLIENT_ORIGIN, "http://localhost:3000", "http://127.0.0.1:5500"], 
   credentials: true
 }));
@@ -35,7 +35,6 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error(err));
 
 // ---------- Multer (Temp Storage) ----------
-// We use /tmp because it's the only writable path on many cloud providers
 const UPLOAD_DIR = '/tmp'; 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
@@ -44,7 +43,6 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
 
-// LIMIT FILE SIZE to 10MB to prevent server crashes (Free tier RAM is low)
 const upload = multer({ 
     storage,
     limits: { fileSize: 10 * 1024 * 1024 } 
@@ -54,15 +52,15 @@ const upload = multer({
 const fileSchema = new mongoose.Schema({
   code: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
-  cloudinaryUrl: { type: String, required: true }, // Store URL instead of path
-  cloudinaryPublicId: { type: String, required: true }, // For deletion
+  cloudinaryUrl: { type: String, required: true },
+  cloudinaryPublicId: { type: String, required: true },
   originalName: { type: String, required: true },
   uploadDate: { type: Date, default: Date.now },
   expiresAt: { type: Date, required: true }
 });
 const File = mongoose.model('File', fileSchema);
 
-// ---------- Encryption/Decryption (Same as yours) ----------
+// ---------- Encryption/Decryption ----------
 const ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16;
 
@@ -98,23 +96,27 @@ api.post('/upload', upload.single('file'), async (req, res) => {
   if (!file || !password) return res.status(400).json({ success: false, message: 'Missing file or password' });
 
   try {
-    // 1. Encrypt file in place
     const fileBuffer = fs.readFileSync(file.path);
     const encryptedBuffer = encrypt(fileBuffer, password);
     fs.writeFileSync(file.path, encryptedBuffer);
 
-    // 2. Upload Encrypted file to Cloudinary (as "raw" file type)
     const result = await cloudinary.uploader.upload(file.path, {
       resource_type: 'raw',
       folder: 'quantc_encrypted'
     });
 
-    // 3. Clean up local temp file
     fs.unlinkSync(file.path);
 
-    // 4. Save to DB
     const passwordHash = await bcrypt.hash(password, 10);
-    const code = generateCode(); // (Add collision check loop from your original code here)
+    
+    // Simple collision check
+    let code;
+    let isUnique = false;
+    while(!isUnique) {
+        code = generateCode();
+        const existing = await File.findOne({ code });
+        if (!existing) isUnique = true;
+    }
     
     const newFile = new File({
       code,
@@ -146,9 +148,12 @@ api.post('/retrieve', async (req, res) => {
     const isMatch = await bcrypt.compare(password, fileRecord.passwordHash);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Incorrect password' });
 
-    // 1. Download Encrypted file from Cloudinary
-    const response = await axios.get(fileRecord.cloudinaryUrl, { responseType: 'arraybuffer' });
-    const encryptedBuffer = Buffer.from(response.data);
+    // 1. Download Encrypted file (Using native fetch, NO Axios)
+    const response = await fetch(fileRecord.cloudinaryUrl);
+    if (!response.ok) throw new Error("Cloudinary fetch failed");
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const encryptedBuffer = Buffer.from(arrayBuffer);
 
     // 2. Decrypt
     const decryptedBuffer = decrypt(encryptedBuffer, password);
@@ -166,13 +171,17 @@ api.post('/retrieve', async (req, res) => {
 
 app.use('/api', api);
 
-// Cleanup Job (Modified for Cloudinary)
+// Cleanup Job
 setInterval(async () => {
     const expired = await File.find({ expiresAt: { $lt: new Date() } });
     for (const file of expired) {
-        await cloudinary.uploader.destroy(file.cloudinaryPublicId, { resource_type: 'raw' });
-        await File.deleteOne({ _id: file._id });
+        try {
+            await cloudinary.uploader.destroy(file.cloudinaryPublicId, { resource_type: 'raw' });
+            await File.deleteOne({ _id: file._id });
+        } catch(e) { console.error("Cleanup error", e); }
     }
 }, 60 * 60 * 1000);
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Bind to 0.0.0.0 for Render
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => console.log(`Server running on ${HOST}:${PORT}`));
