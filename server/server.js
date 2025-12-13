@@ -1,4 +1,4 @@
-// server.js
+// server.js (Final Fix: .dat extension)
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -10,7 +10,6 @@ const fs = require('fs');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
 
-// app setup
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -31,9 +30,9 @@ app.use(cors({
 // ---------- Database ----------
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(err));
+  .catch(err => console.error("MongoDB Error:", err));
 
-// ---------- Multer (Temp Storage) ----------
+// ---------- Multer ----------
 const UPLOAD_DIR = '/tmp'; 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
@@ -44,7 +43,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+    limits: { fileSize: 10 * 1024 * 1024 } 
 });
 
 // ---------- Schema ----------
@@ -59,7 +58,7 @@ const fileSchema = new mongoose.Schema({
 });
 const File = mongoose.model('File', fileSchema);
 
-// ---------- Encryption/Decryption ----------
+// ---------- Encryption Helpers ----------
 const ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16;
 
@@ -87,40 +86,36 @@ function generateCode() {
 // ---------- Routes ----------
 const api = express.Router();
 
-// Upload Route (UPDATED FIX)
 api.post('/upload', upload.single('file'), async (req, res) => {
   const { password } = req.body;
   const file = req.file;
 
   if (!file || !password) return res.status(400).json({ success: false, message: 'Missing file or password' });
 
-  // Define paths
   const originalPath = file.path;
-  const safeBinPath = file.path + '.bin'; // FORCE .bin extension
+  // FIX: Using .dat because Cloudinary blocks .bin
+  const safeBinPath = file.path + '.dat'; 
 
   try {
-    // 1. Encrypt the file data
+    // 1. Encrypt
     const fileBuffer = fs.readFileSync(originalPath);
     const encryptedBuffer = encrypt(fileBuffer, password);
-    
-    // 2. Write encrypted data to disk
     fs.writeFileSync(originalPath, encryptedBuffer);
 
-    // 3. RENAME to .bin so Cloudinary treats it as raw binary (prevents corruption)
+    // 2. Rename to .dat (Safe extension)
     fs.renameSync(originalPath, safeBinPath);
 
-    // 4. Upload the .bin file
+    // 3. Upload
     const result = await cloudinary.uploader.upload(safeBinPath, {
-      resource_type: 'raw',
+      resource_type: 'raw', // Important: Treat as raw data
       folder: 'quantc_encrypted'
     });
 
-    // 5. Cleanup temp file
+    // Cleanup temp files
     if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
 
-    // 6. Save metadata to DB
+    // 4. Save DB Record
     const passwordHash = await bcrypt.hash(password, 10);
-    
     let code;
     let isUnique = false;
     while(!isUnique) {
@@ -134,7 +129,7 @@ api.post('/upload', upload.single('file'), async (req, res) => {
       passwordHash,
       cloudinaryUrl: result.secure_url,
       cloudinaryPublicId: result.public_id,
-      originalName: file.originalname, // We remember the real name here
+      originalName: file.originalname,
       expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
     });
     
@@ -142,18 +137,18 @@ api.post('/upload', upload.single('file'), async (req, res) => {
     res.json({ success: true, code });
 
   } catch (error) {
-    console.error(error);
-    // Cleanup any leftover files
+    console.error("UPLOAD ERROR:", error);
+    
+    // Cleanup
     if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath);
     if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
-    res.status(500).json({ success: false, message: 'Upload failed' });
+
+    res.status(500).json({ success: false, message: `Server Error: ${error.message}` });
   }
 });
 
-// Retrieve Route
 api.post('/retrieve', async (req, res) => {
   const { code, password } = req.body;
-  
   try {
     const fileRecord = await File.findOne({ code });
     if (!fileRecord) return res.status(404).json({ success: false, message: 'File not found' });
@@ -161,38 +156,35 @@ api.post('/retrieve', async (req, res) => {
     const isMatch = await bcrypt.compare(password, fileRecord.passwordHash);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Incorrect password' });
 
-    // 1. Download Encrypted file
     const response = await fetch(fileRecord.cloudinaryUrl);
     if (!response.ok) throw new Error("Cloudinary fetch failed");
     
     const arrayBuffer = await response.arrayBuffer();
     const encryptedBuffer = Buffer.from(arrayBuffer);
-
-    // 2. Decrypt
     const decryptedBuffer = decrypt(encryptedBuffer, password);
+    
     if (!decryptedBuffer) return res.status(401).json({ success: false, message: 'Decryption failed' });
 
-    // 3. Send to user with ORIGINAL filename
     res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.originalName}"`);
     res.send(decryptedBuffer);
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: 'Retrieval failed' });
+    res.status(500).json({ success: false, message: `Retrieval Error: ${error.message}` });
   }
 });
 
 app.use('/api', api);
 
-// Cleanup Job
+// Cleanup
 setInterval(async () => {
-    const expired = await File.find({ expiresAt: { $lt: new Date() } });
-    for (const file of expired) {
-        try {
+    try {
+        const expired = await File.find({ expiresAt: { $lt: new Date() } });
+        for (const file of expired) {
             await cloudinary.uploader.destroy(file.cloudinaryPublicId, { resource_type: 'raw' });
             await File.deleteOne({ _id: file._id });
-        } catch(e) { console.error("Cleanup error", e); }
-    }
+        }
+    } catch(e) {}
 }, 60 * 60 * 1000);
 
 const HOST = '0.0.0.0';
