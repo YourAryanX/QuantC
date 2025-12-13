@@ -2,8 +2,7 @@
 
 // Change this URL to your Render Backend URL after deployment
 // e.g. 'https://quantc-backend.onrender.com'
-// For local dev, use 'http://localhost:3000'
-const API_BASE_URL = "https://your-app-name.onrender.com";
+const API_BASE_URL = 'https://quantc-3.onrender.com';
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- DOM Elements ---
