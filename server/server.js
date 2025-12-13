@@ -10,8 +10,7 @@ const fs = require('fs');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
 
-// ❌ DELETED: const axios = require('axios'); <-- This was causing your crash
-
+// app setup
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -45,7 +44,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 } 
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
 // ---------- Schema ----------
@@ -88,28 +87,40 @@ function generateCode() {
 // ---------- Routes ----------
 const api = express.Router();
 
-// Upload Route
+// Upload Route (UPDATED FIX)
 api.post('/upload', upload.single('file'), async (req, res) => {
   const { password } = req.body;
   const file = req.file;
 
   if (!file || !password) return res.status(400).json({ success: false, message: 'Missing file or password' });
 
-  try {
-    const fileBuffer = fs.readFileSync(file.path);
-    const encryptedBuffer = encrypt(fileBuffer, password);
-    fs.writeFileSync(file.path, encryptedBuffer);
+  // Define paths
+  const originalPath = file.path;
+  const safeBinPath = file.path + '.bin'; // FORCE .bin extension
 
-    const result = await cloudinary.uploader.upload(file.path, {
+  try {
+    // 1. Encrypt the file data
+    const fileBuffer = fs.readFileSync(originalPath);
+    const encryptedBuffer = encrypt(fileBuffer, password);
+    
+    // 2. Write encrypted data to disk
+    fs.writeFileSync(originalPath, encryptedBuffer);
+
+    // 3. RENAME to .bin so Cloudinary treats it as raw binary (prevents corruption)
+    fs.renameSync(originalPath, safeBinPath);
+
+    // 4. Upload the .bin file
+    const result = await cloudinary.uploader.upload(safeBinPath, {
       resource_type: 'raw',
       folder: 'quantc_encrypted'
     });
 
-    fs.unlinkSync(file.path);
+    // 5. Cleanup temp file
+    if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
 
+    // 6. Save metadata to DB
     const passwordHash = await bcrypt.hash(password, 10);
     
-    // Simple collision check
     let code;
     let isUnique = false;
     while(!isUnique) {
@@ -123,7 +134,7 @@ api.post('/upload', upload.single('file'), async (req, res) => {
       passwordHash,
       cloudinaryUrl: result.secure_url,
       cloudinaryPublicId: result.public_id,
-      originalName: file.originalname,
+      originalName: file.originalname, // We remember the real name here
       expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
     });
     
@@ -132,7 +143,9 @@ api.post('/upload', upload.single('file'), async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    // Cleanup any leftover files
+    if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath);
+    if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
     res.status(500).json({ success: false, message: 'Upload failed' });
   }
 });
@@ -148,7 +161,7 @@ api.post('/retrieve', async (req, res) => {
     const isMatch = await bcrypt.compare(password, fileRecord.passwordHash);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Incorrect password' });
 
-    // 1. Download Encrypted file (Using native fetch, NO Axios)
+    // 1. Download Encrypted file
     const response = await fetch(fileRecord.cloudinaryUrl);
     if (!response.ok) throw new Error("Cloudinary fetch failed");
     
@@ -159,7 +172,7 @@ api.post('/retrieve', async (req, res) => {
     const decryptedBuffer = decrypt(encryptedBuffer, password);
     if (!decryptedBuffer) return res.status(401).json({ success: false, message: 'Decryption failed' });
 
-    // 3. Send to user
+    // 3. Send to user with ORIGINAL filename
     res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.originalName}"`);
     res.send(decryptedBuffer);
 
@@ -182,6 +195,5 @@ setInterval(async () => {
     }
 }, 60 * 60 * 1000);
 
-// Bind to 0.0.0.0 for Render
 const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => console.log(`Server running on ${HOST}:${PORT}`));
