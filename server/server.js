@@ -1,13 +1,14 @@
+// server.js (Final Production Version with CORS Fix)
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
-const axios = require('axios'); // Install this: npm install axios
-const streamifier = require('streamifier'); // Install this: npm install streamifier
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,38 +20,39 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// ---------- Middleware ----------
+// ---------- Middleware (UPDATED) ----------
 app.use(express.json());
 
-// ✅ FIX: Permissive CORS for Vercel
-// Vercel sometimes has issues with strict origin matching during cold starts.
+// ✅ FIX: Allow Frontend to read the filename header
 app.use(cors({
-  origin: true, // Allow any origin (easiest for debugging "Failed to fetch")
+  origin: [
+      process.env.CLIENT_ORIGIN, 
+      "http://localhost:3000", 
+      "http://127.0.0.1:5500", 
+      "https://quantc.vercel.app", 
+      "https://quantc.netlify.app"
+  ], 
   credentials: true,
-  exposedHeaders: ['Content-Disposition'] 
+  exposedHeaders: ['Content-Disposition'] // This line is crucial for correct filenames
 }));
 
-// ---------- Database (Cached for Serverless) ----------
-let isConnected = false;
-const connectDB = async () => {
-  if (isConnected) return;
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
-    isConnected = true;
-    console.log('✅ MongoDB connected');
-  } catch (err) {
-    console.error("❌ MongoDB Error:", err);
-  }
-};
+// ---------- Database ----------
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error("MongoDB Error:", err));
 
-// ---------- Multer (Memory Storage) ----------
-// FIX: Use memoryStorage for Vercel/Serverless. 
-// Do not use diskStorage (/tmp) as it causes issues.
-const storage = multer.memoryStorage();
+// ---------- Multer ----------
+const UPLOAD_DIR = '/tmp'; 
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
 
 const upload = multer({ 
     storage,
-    limits: { fileSize: 4.5 * 1024 * 1024 } // Vercel Free Tier Limit is 4.5MB for body size
+    limits: { fileSize: 10 * 1024 * 1024 } 
 });
 
 // ---------- Schema ----------
@@ -63,8 +65,7 @@ const fileSchema = new mongoose.Schema({
   uploadDate: { type: Date, default: Date.now },
   expiresAt: { type: Date, required: true }
 });
-// Check if model exists to prevent overwrite error in hot-reload
-const File = mongoose.models.File || mongoose.model('File', fileSchema);
+const File = mongoose.model('File', fileSchema);
 
 // ---------- Encryption Helpers ----------
 const ALGORITHM = 'aes-256-cbc';
@@ -91,45 +92,38 @@ function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// ---------- Helper: Upload Stream to Cloudinary ----------
-const streamUpload = (buffer) => {
-    return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-            { resource_type: 'raw', folder: 'quantc_encrypted' },
-            (error, result) => {
-                if (result) {
-                    resolve(result);
-                } else {
-                    reject(error);
-                }
-            }
-        );
-        streamifier.createReadStream(buffer).pipe(stream);
-    });
-};
-
 // ---------- Routes ----------
 const api = express.Router();
 
-// 1. Upload Route
 api.post('/upload', upload.single('file'), async (req, res) => {
-  await connectDB(); // Ensure DB is connected
-  
   const { password } = req.body;
   const file = req.file;
 
   if (!file || !password) return res.status(400).json({ success: false, message: 'Missing file or password' });
 
+  const originalPath = file.path;
+  // FIX: Using .dat because Cloudinary blocks .bin
+  const safeBinPath = file.path + '.dat'; 
+
   try {
-    console.log("Starting encryption...");
-    // 1. Encrypt Buffer directly from RAM
-    const encryptedBuffer = encrypt(file.buffer, password);
+    // 1. Encrypt
+    const fileBuffer = fs.readFileSync(originalPath);
+    const encryptedBuffer = encrypt(fileBuffer, password);
+    fs.writeFileSync(originalPath, encryptedBuffer);
 
-    console.log("Uploading to Cloudinary...");
-    // 2. Upload Encrypted Buffer via Stream
-    const result = await streamUpload(encryptedBuffer);
+    // 2. Rename to .dat (Safe extension)
+    fs.renameSync(originalPath, safeBinPath);
 
-    // 3. Save DB Record
+    // 3. Upload
+    const result = await cloudinary.uploader.upload(safeBinPath, {
+      resource_type: 'raw', // Important: Treat as raw data
+      folder: 'quantc_encrypted'
+    });
+
+    // Cleanup temp files
+    if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
+
+    // 4. Save DB Record
     const passwordHash = await bcrypt.hash(password, 10);
     let code;
     let isUnique = false;
@@ -149,4 +143,58 @@ api.post('/upload', upload.single('file'), async (req, res) => {
     });
     
     await newFile.save();
-    console.
+    res.json({ success: true, code });
+
+  } catch (error) {
+    console.error("UPLOAD ERROR:", error);
+    
+    // Cleanup
+    if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath);
+    if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
+
+    res.status(500).json({ success: false, message: `Server Error: ${error.message}` });
+  }
+});
+
+api.post('/retrieve', async (req, res) => {
+  const { code, password } = req.body;
+  try {
+    const fileRecord = await File.findOne({ code });
+    if (!fileRecord) return res.status(404).json({ success: false, message: 'File not found' });
+
+    const isMatch = await bcrypt.compare(password, fileRecord.passwordHash);
+    if (!isMatch) return res.status(401).json({ success: false, message: 'Incorrect password' });
+
+    const response = await fetch(fileRecord.cloudinaryUrl);
+    if (!response.ok) throw new Error("Cloudinary fetch failed");
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const encryptedBuffer = Buffer.from(arrayBuffer);
+    const decryptedBuffer = decrypt(encryptedBuffer, password);
+    
+    if (!decryptedBuffer) return res.status(401).json({ success: false, message: 'Decryption failed' });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.originalName}"`);
+    res.send(decryptedBuffer);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: `Retrieval Error: ${error.message}` });
+  }
+});
+
+app.use('/api', api);
+
+// Cleanup
+setInterval(async () => {
+    try {
+        const expired = await File.find({ expiresAt: { $lt: new Date() } });
+        for (const file of expired) {
+            await cloudinary.uploader.destroy(file.cloudinaryPublicId, { resource_type: 'raw' });
+            await File.deleteOne({ _id: file._id });
+        }
+    } catch(e) {}
+}, 60 * 60 * 1000);
+
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => console.log(`Server running on ${HOST}:${PORT}`));
