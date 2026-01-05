@@ -1,374 +1,416 @@
-/* client/style.css */
-
-/* --- Dark Mode Variables (Matching Screenshots) --- */
 :root {
-    /* Main Dark Theme Colors */
-    --app-bg: #111111; /* Very dark background */
-    --sidebar-bg: #222222; /* Sidebar background (slightly lighter) */
-    --card-bg: #2D2E30; /* Central card background */
-    --input-bg: #3C3E42; /* Input field background */
-
-    /* Accent Colors */
-    --primary-color: #3B82F6; /* Blue accent for buttons and highlights */
-    --primary-light: #5B95F8;
-    --logo-color: #9a67d3; /* Yellow/Orange logo color */
-    
-    /* Text and Status */
-    --text-color: #F8F8F8; /* Light text */
-    --light-text: #B0B0B0;
-    --error-color: #86ddf6; /* Red for errors (like the bar) */
-    --success-color: #27AE60; 
-    --border-color: #444444; 
-    --shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+    --bg-main: #030712; 
+    --accent: #818cf8;
+    --accent-glow: rgba(99, 102, 241, 0.4);
+    --glass: rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --text-primary: #ffffff;
+    --text-muted: #94a3b8;
 }
 
 body {
-    font-family: 'Roboto', Arial, sans-serif;
+    font-family: 'Plus Jakarta Sans', sans-serif;
     margin: 0;
-    padding: 0;
-    background-color: var(--app-bg);
-    color: var(--text-color);
-    line-height: 1.6;
-    height: 100vh;
-    overflow: hidden; /* Hide scrollbar when using fixed layout */
-}
-
-.hidden {
-    display: none !important;
-}
-
-/* --- APP CONTAINER & LAYOUT --- */
-.app-container {
-    display: flex;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    overflow: hidden;
     height: 100vh;
 }
 
-/* --- Sidebar Styling --- */
-.sidebar {
-    width: 250px;
-    background-color: var(--sidebar-bg);
-    padding: 20px 0;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
-}
-
-.logo {
-    color: var(--logo-color);
-    margin: 0 25px 40px;
-    font-size: 1.8em;
-    font-weight: 700;
-}
-
-.sidebar-nav {
-    padding: 0 10px;
-}
-
-.sidebar-btn {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    background: none;
-    border: none;
-    padding: 12px 20px;
-    margin-bottom: 8px;
-    text-align: left;
-    cursor: pointer;
-    font-size: 1em;
-    color: var(--light-text);
-    border-radius: 8px;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.sidebar-btn .icon {
-    font-size: 1em;
-    margin-right: 15px;
-}
-
-.sidebar-btn:hover {
-    background-color: #333333;
-}
-
-.sidebar-btn.active {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-/* --- Main Content Area (For centering the card) --- */
-.main-content {
-    flex-grow: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-
-/* --- Central Content Card (Upload/Retrieve) --- */
-.content-card {
-    background-color: var(--card-bg);
-    padding: 40px;
-    border-radius: 16px;
-    box-shadow: var(--shadow);
-    text-align: center;
-    width: 100%;
-    max-width: 450px;
-}
-
-.card-header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 30px;
-}
-
-.card-header i {
-    font-size: 2.5em;
-    color: var(--light-text);
-    margin-bottom: 15px;
-}
-
-.card-header h2 {
-    font-size: 1.4em;
-    margin: 0;
-    color: var(--text-color);
-}
-
-.card-form {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-/* --- Input Field Styling --- */
-.card-form input[type="text"],
-.card-form input[type="password"] {
-    width: 100%;
-    padding: 15px 20px;
-    background-color: var(--input-bg);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 1em;
-    box-sizing: border-box;
-    transition: border-color 0.2s;
-}
-
-.card-form input:focus {
-    border-color: var(--primary-color);
-    outline: none;
-}
-
-/* --- Custom File Input (Matching Screenshot) --- */
-.custom-file-input-group {
-    display: flex;
-    width: 100%;
-    border-radius: 8px;
-    overflow: hidden;
-    height: 50px;
-}
-
-.custom-file-input-group input[type="file"] {
-    display: none; /* Hide the native input */
-}
-
-.file-label {
-    background-color: var(--border-color);
-    color: var(--text-color);
-    padding: 15px 20px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s;
-    flex-shrink: 0; /* Keep the button fixed size */
-    line-height: 20px; /* Align text vertically */
-}
-
-.file-label:hover {
-    background-color: #555555;
-}
-
-.file-name-display {
-    background-color: var(--input-bg);
-    color: var(--light-text);
-    padding: 15px 15px;
-    flex-grow: 1; /* Take up remaining space */
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 20px; /* Align text vertically */
-}
-
-/* --- Action Button Styling --- */
-.action-btn {
-    width: 100%;
-    padding: 15px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 1.1em;
-    font-weight: 500;
-    transition: background-color 0.2s;
-    margin-top: 10px;
-}
-
-.primary-btn {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-.primary-btn:hover {
-    background-color: var(--primary-light);
-}
-
-/* --- Uploading State --- */
-.uploading-state {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--primary-color);
-    color: white;
-    padding: 15px;
-    border-radius: 8px;
-    margin-top: 10px;
-}
-
-.spinner {
-    border: 3px solid rgba(255, 255, 255, 0.3);
-    border-top: 3px solid #ffffff;
-    border-radius: 50%;
-    width: 16px;
-    height: 16px;
-    animation: spin 1s linear infinite;
-    margin-right: 10px;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* --- Retrieval Error Bar (Matching Screenshot) --- */
-.status-message {
-    padding: 15px;
-    border-radius: 4px;
-    text-align: center;
-    margin-top: 20px;
-}
-
-.status-message p {
-    margin: 0;
-    color: var(--error-color); /* Error text color */
-    font-weight: 500;
-}
-
-/* The red bar shown in the screenshot is likely a wide error message, 
-   but we'll implement a clean error box here */
-.error-message-bar {
-    width: 100%;
-    height: 8px; /* Height matching the bar */
-    background-color: var(--error-color);
-    margin-top: 20px;
-    border-radius: 4px;
-}
-
-
-/* ------------------------------------------- */
-/* --- CODE DISPLAY VIEW (Full-Screen) --- */
-/* ------------------------------------------- */
-.code-view-container {
+/* --- HD Liquid Background with Gooey Physics --- */
+.background-canvas {
     position: fixed;
-    top: 0;
-    left: 0;
     width: 100%;
     height: 100%;
-    background-color: var(--app-bg); 
+    z-index: -1;
+    background: radial-gradient(circle at 50% 50%, #0f172a, #030712);
+    overflow: hidden;
+    /* Links to the SVG filter in index.html */
+    filter: url(#gooey-physics); 
+}
+
+/* High-Resolution Grain Texture */
+.background-canvas::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-image: url("https://grainy-gradients.vercel.app/noise.svg");
+    opacity: 0.15;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+}
+
+.bubble {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.7;
+    mix-blend-mode: screen;
+    will-change: transform;
+}
+
+.b1 { width: 650px; height: 650px; background: radial-gradient(circle, #4338ca, transparent); top: -10%; left: 5%; }
+.b2 { width: 550px; height: 550px; background: radial-gradient(circle, #6366f1, transparent); bottom: -5%; right: 10%; }
+.b3 { width: 450px; height: 450px; background: radial-gradient(circle, #a855f7, transparent); top: 30%; left: 35%; opacity: 0.4; }
+
+/* --- Particle System for Bubble Shot --- */
+#particle-container {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 999;
+}
+
+.particle {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* --- Fixed Magnetic Navigation --- */
+.floating-nav {
+    position: fixed;
+    left: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(30px);
+    border: 1px solid var(--glass-border);
+    border-radius: 30px;
+    padding: 20px 12px;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    gap: 25px;
     z-index: 100;
 }
 
-.code-box {
-    background-color: var(--card-bg);
-    padding: 40px 60px;
-    border-radius: 16px;
-    box-shadow: var(--shadow);
-    text-align: center;
-    max-width: 500px;
-}
-
-.code-title {
-    color: var(--primary-color);
-    font-size: 1.8em;
-    margin-bottom: 20px;
-}
-
-.code-instruction {
-    color: var(--light-text);
-    margin-bottom: 30px;
-}
-
-.final-code {
-    display: block;
-    font-size: 4.5em; 
-    font-weight: 700;
-    letter-spacing: 10px;
-    color: var(--primary-color); 
-    margin: 20px 0;
-    padding: 10px;
-    border-radius: 8px;
-    background-color: var(--input-bg); 
-}
-
-.code-expiry-note {
-    font-size: 0.9em;
-    color: var(--error-color); 
-    margin-bottom: 30px;
-}
-
-.done-btn {
-    background-color: var(--primary-color);
+.nav-brand {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
     color: white;
-    padding: 15px 50px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    cursor: default;
+    will-change: transform;
+}
+
+.nav-btn {
+    width: 48px;
+    height: 48px;
     border: none;
-    border-radius: 30px; 
+    border-radius: 16px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1.3rem;
     cursor: pointer;
-    font-size: 1.2em;
-    font-weight: 500;
-    transition: background-color 0.2s;
+    transition: background 0.3s, color 0.3s, box-shadow 0.3s;
+    will-change: transform;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.done-btn:hover {
-    background-color: var(--primary-light);
+.nav-btn.active {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 0 20px var(--accent-glow);
 }
 
-/* --- Responsive Adjustments --- */
-@media (max-width: 768px) {
-    .sidebar {
-        width: 100%;
-        height: auto;
-        position: relative;
-        box-shadow: none;
-        border-bottom: 1px solid var(--border-color);
-    }
-    .sidebar-nav {
-        display: flex;
-        justify-content: center;
-        padding: 0 15px;
-    }
-    .sidebar-btn {
-        flex: 1;
-        text-align: center;
-        justify-content: center;
-    }
-    .logo {
-        text-align: center;
-        margin-bottom: 15px;
-    }
-    .main-content {
-        padding: 30px 15px;
-    }
-    .content-card {
-        padding: 25px;
-    }
+/* --- Viewport & Layout --- */
+.viewport {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+.main-heading { 
+    font-size: 4.5rem; 
+    font-weight: 800; 
+    letter-spacing: -3px; 
+    margin: 0;
+}
+
+.main-heading span { 
+    background: linear-gradient(to right, #7c8cff, #c6a0eb);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.sub-heading { color: var(--text-muted); margin-top: 10px; font-size: 1.1rem; }
+
+/* --- High-Visibility Glass Card --- */
+.glass-hub {
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(60px) saturate(180%);
+    -webkit-backdrop-filter: blur(60px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 40px;
+    padding: 50px;
+    width: 420px;
+    margin-top: 40px;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.5);
+    opacity: 1; /* Fixed visibility */
+    transition: transform 0.3s ease;
+    position: relative; /* For absolute positioning of loader */
+    overflow: hidden; /* Keeps loader contained */
+}
+
+.glass-hub.hidden {
+    display: none !important;
+    opacity: 0;
+}
+
+.pulse-icon {
+    width: 85px;
+    height: 85px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: var(--accent);
+    margin-bottom: 20px;
+    transition: transform 0.3s ease, background 0.3s;
+}
+
+.drop-trigger {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 30px;
+    background: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    margin-bottom: 30px;
+    transition: 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+.drop-trigger:hover {
+    border-color: var(--accent);
+    background: rgba(129, 140, 248, 0.05);
+}
+
+/* Drag and Drop Visual States */
+.drop-trigger.drag-active {
+    border: 2px solid var(--accent);
+    background: rgba(129, 140, 248, 0.1);
+    box-shadow: 0 0 30px rgba(129, 140, 248, 0.3);
+    transform: scale(1.02);
+}
+
+.drop-trigger.drag-active .pulse-icon {
+    transform: scale(1.1);
+    background: var(--accent);
+    color: white;
+}
+
+.drop-trigger.drag-active span {
+    color: var(--accent);
+    letter-spacing: 3px;
+}
+
+/* --- Input Fields & Buttons --- */
+.input-glow-group { position: relative; margin-bottom: 15px; }
+
+.input-glow-group i {
+    position: absolute;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent);
+}
+
+input {
+    width: 100%;
+    padding: 18px 20px 18px 55px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: #ffffff !important;
+    font-size: 1rem;
+    box-sizing: border-box;
+    transition: 0.3s ease;
+}
+
+input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 15px var(--accent-glow);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-glow-primary {
+    width: 100%;
+    padding: 20px;
+    border-radius: 18px;
+    border: none;
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: white;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    cursor: pointer;
+    box-shadow: 0 15px 35px rgba(79, 70, 229, 0.4);
+    position: relative;
+    overflow: hidden;
+    transition: 0.3s;
+}
+
+.btn-glow-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 40px rgba(79, 70, 229, 0.6);
+}
+
+.btn-glow-primary:active {
+    transform: scale(0.98);
+}
+
+/* ---------------------------------------------------- */
+/* --- NEW ADDITIONS FOR FUNCTIONALITY & UI UPDATES --- */
+/* ---------------------------------------------------- */
+
+/* 1. Loading Overlay */
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.85); /* Matches background theme */
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 40px;
+    gap: 20px;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 3px solid rgba(129, 140, 248, 0.2);
+    border-radius: 50%;
+    border-top-color: var(--accent);
+    animation: spin 1s ease-in-out infinite;
+    box-shadow: 0 0 20px var(--accent-glow);
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 2. Success Result View */
+.result-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 10px;
+    animation: fadeIn 0.5s ease;
+}
+
+.success-icon {
+    width: 70px;
+    height: 70px;
+    background: linear-gradient(135deg, #4ade80, #22c55e);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: white;
+    margin-bottom: 20px;
+    box-shadow: 0 0 30px rgba(74, 222, 128, 0.4);
+}
+
+.code-display-box {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 15px 25px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin: 20px 0;
+    position: relative;
+}
+
+#generated-code {
+    font-family: 'Courier New', monospace;
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: 6px;
+    color: var(--accent);
+    text-shadow: 0 0 15px var(--accent-glow);
+}
+
+#copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#copy-btn:hover { color: white; transform: scale(1.1); }
+
+/* 3. Toast Notifications */
+#toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.toast {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-left: 4px solid var(--accent);
+    color: white;
+    padding: 18px 25px;
+    border-radius: 14px;
+    min-width: 320px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+    transform: translateX(120%);
+    opacity: 0;
+    transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.toast.show { transform: translateX(0); opacity: 1; }
+
+.toast.success { border-left-color: #4ade80; }
+.toast.success i { color: #4ade80; }
+
+.toast.error { border-left-color: #f87171; }
+.toast.error i { color: #f87171; }
+
+/* 4. General Utilities */
+.hidden { 
+    display: none !important; 
+    opacity: 0; 
+}
+
+@keyframes fadeIn { 
+    from { opacity: 0; transform: translateY(10px); } 
+    to { opacity: 1; transform: translateY(0); } 
 }
