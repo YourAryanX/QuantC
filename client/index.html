@@ -3,82 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QuantC | Neural Transfer</title>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"> 
+    <title>Quantc</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"> 
 </head>
-<body>
+<body class="dark-mode"> 
     
-    <div class="background-canvas">
-        <div class="bubble b1" id="orb-1"></div>
-        <div class="bubble b2" id="orb-2"></div>
-        <div class="bubble b3" id="orb-3"></div>
+    <div id="main-app-container" class="app-container">
+        
+        <aside class="sidebar">
+            <h1 class="logo">QuantC</h1>
+            <div class="sidebar-nav">
+                <button id="upload-mode-btn" class="sidebar-btn active">
+                    <span class="icon">⬆️</span> New Upload
+                </button>
+                <button id="retrieve-mode-btn" class="sidebar-btn">
+                    <span class="icon">⬇️</span> Retrieve
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            
+            <div id="upload-card" class="content-card active">
+                <div class="card-header">
+                    <i class="fas fa-file-invoice"></i>
+                    <h2>Upload File</h2>
+                </div>
+                
+                <form id="upload-form" class="card-form">
+                    <div class="custom-file-input-group">
+                        <input type="file" id="file-input" name="file" required>
+                        <label for="file-input" class="file-label" id="file-label">Choose File</label>
+                        <span class="file-name-display" id="file-name-display">No file chosen</span>
+                    </div>
+
+                    <input type="password" id="upload-password" placeholder="Set Password" required>
+
+                    <button type="submit" class="action-btn primary-btn" id="upload-submit-btn">
+                        Get Code
+                    </button>
+
+                    <div id="uploading-state" class="uploading-state hidden">
+                        <div class="spinner"></div>
+                        <span>Uploading...</span>
+                    </div>
+                </form>
+            </div>
+
+            <div id="retrieve-card" class="content-card hidden">
+                <div class="card-header">
+                    <i class="fas fa-lock"></i>
+                    <h2>Retrieve File</h2>
+                </div>
+                
+                <form id="retrieve-form" class="card-form">
+                    <input type="text" id="retrieve-code" placeholder="6-Digit Code" maxlength="6" required>
+                    <input type="password" id="retrieve-password" placeholder="Password" required>
+                    
+                    <button type="submit" class="action-btn primary-btn">
+                        Download
+                    </button>
+                </form>
+
+                <div id="retrieve-result" class="status-message hidden">
+                    <p id="retrieve-message"></p>
+                </div>
+            </div>
+
+        </main>
     </div>
 
-    <div id="particle-container"></div>
-
-    <aside class="floating-nav">
-        <div class="nav-brand">Q</div>
-        <button id="upload-mode-btn" class="nav-btn active">
-            <i class="fa-solid fa-plus-circle"></i>
-        </button>
-        <button id="retrieve-mode-btn" class="nav-btn">
-            <i class="fa-solid fa-fingerprint"></i>
-        </button>
-    </aside>
-
-    <main class="viewport">
-        <div class="heading-section">
-            <h1 class="main-heading">Quant<span>c</span></h1>
-            <p class="sub-heading">Next-gen encryption protocol.</p>
+    <div id="code-display-view" class="code-view-container hidden">
+        <div class="code-box">
+            <h2 class="code-title">Your Unique Access Code</h2>
+            <p class="code-instruction">
+                Your file is now securely stored. Use this code and your password.
+            </p>
+            <code id="final-display-code" class="final-code"></code>
+            <p class="code-expiry-note">
+                This code will expire and your file will be permanently deleted in 48 hours.
+            </p>
+            <button id="done-btn" class="done-btn">DONE</button>
         </div>
+    </div>
 
-        <div id="upload-card" class="glass-hub">
-            <form id="upload-form">
-                <input type="file" id="file-input" hidden>
-                <label for="file-input" class="drop-trigger">
-                    <div class="pulse-icon">
-                        <i class="fa-solid fa-atom"></i>
-                    </div>
-                    <span id="file-name-display">Initialize Packet</span>
-                </label>
 
-                <div class="input-glow-group">
-                    <i class="fa-solid fa-shield-virus"></i>
-                    <input type="password" id="upload-password" placeholder="Enter Key Phrase" required>
-                </div>
-
-                <button type="submit" class="btn-glow-primary">GET CODE</button>
-            </form>
-        </div>
-
-        <div id="retrieve-card" class="glass-hub hidden">
-            <form id="retrieve-form">
-                <div class="input-glow-group">
-                    <i class="fa-solid fa-hashtag"></i>
-                    <input type="text" id="retrieve-code" placeholder="6-Digit Code" maxlength="6" required>
-                </div>
-                <div class="input-glow-group">
-                    <i class="fa-solid fa-key"></i>
-                    <input type="password" id="retrieve-password" placeholder="Key Phrase" required>
-                </div>
-                <button type="submit" class="btn-glow-primary">DECRYPT NODES</button>
-            </form>
-        </div>
-    </main>
-
-    <svg style="display: none;">
-        <defs>
-            <filter id="gooey-physics">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
-                <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" result="goo" />
-                <feComposite in="SourceGraphic" in2="goo" operator="atop" />
-            </filter>
-        </defs>
-    </svg>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -1,174 +1,213 @@
+// client/script.js
+
+// Change this URL to your Render Backend URL after deployment
+// e.g. 'https://quantc-backend.onrender.com'
+const API_BASE_URL = 'https://quantc-3.onrender.com';
+
 document.addEventListener("DOMContentLoaded", () => {
-    const uploadModeBtn = document.getElementById("upload-mode-btn");
-    const retrieveModeBtn = document.getElementById("retrieve-mode-btn");
-    const uploadCard = document.getElementById("upload-card");
-    const retrieveCard = document.getElementById("retrieve-card");
-    const fileInput = document.getElementById("file-input");
-    const fileNameDisplay = document.getElementById("file-name-display");
-    const particleContainer = document.getElementById("particle-container");
+  // --- DOM Elements ---
+  const mainAppContainer = document.getElementById("main-app-container");
+  const codeDisplayView = document.getElementById("code-display-view");
+  const finalDisplayCode = document.getElementById("final-display-code");
+  const doneBtn = document.getElementById("done-btn");
 
-    // --- 1. GSAP ENTRANCE ANIMATIONS ---
-    const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
-    tl.from(".nav-brand, .nav-btn", { x: -60, opacity: 0, duration: 1.2, stagger: 0.1 })
-      .from(".main-heading", { y: 50, opacity: 0, duration: 1 }, "-=0.8")
-      .from(".glass-hub", { scale: 0.95, opacity: 0, duration: 1.2 }, "-=0.7");
+  const uploadModeBtn = document.getElementById("upload-mode-btn");
+  const retrieveModeBtn = document.getElementById("retrieve-mode-btn");
+  const uploadCard = document.getElementById("upload-card");
+  const retrieveCard = document.getElementById("retrieve-card");
+  const uploadForm = document.getElementById("upload-form");
+  const retrieveForm = document.getElementById("retrieve-form");
+  const retrieveResult = document.getElementById("retrieve-result");
+  const retrieveMessage = document.getElementById("retrieve-message"); // Error/status message text
 
-    // --- 2. HD BUBBLE SHOT (PARTICLE BURST) ---
-    function createBubbleShot(e) {
-        const btn = e.submitter || e.target.querySelector('button');
-        const rect = btn.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
+  const fileInput = document.getElementById("file-input");
+  const fileLabel = document.getElementById("file-label"); // Custom button text
+  const fileNameDisplay = document.getElementById("file-name-display"); // Input display text
+  const uploadSubmitBtn = document.getElementById("upload-submit-btn");
+  const uploadingState = document.getElementById("uploading-state");
+  const body = document.body;
 
-        for (let i = 0; i < 20; i++) {
-            const p = document.createElement("div");
-            p.className = "particle";
-            particleContainer.appendChild(p);
+  // --- VIEW MANAGEMENT FUNCTIONS ---
 
-            const size = Math.random() * 8 + 4;
-            const angle = Math.random() * Math.PI * 2;
-            const velocity = Math.random() * 100 + 50;
-
-            gsap.set(p, { width: size, height: size, x: centerX, y: centerY, opacity: 1 });
-
-            gsap.to(p, {
-                x: centerX + Math.cos(angle) * velocity,
-                y: centerY + Math.sin(angle) * velocity,
-                opacity: 0,
-                scale: 0,
-                duration: 0.8 + Math.random(),
-                ease: "power2.out",
-                onComplete: () => p.remove()
-            });
-        }
+  // Function to switch between Upload and Retrieve modes (in the Main App View)
+  function setMode(mode) {
+    if (mode === "upload") {
+      uploadModeBtn.classList.add("active");
+      retrieveModeBtn.classList.remove("active");
+      uploadCard.classList.remove("hidden");
+      retrieveCard.classList.add("hidden");
+    } else {
+      uploadModeBtn.classList.remove("active");
+      retrieveModeBtn.classList.add("active");
+      uploadCard.classList.add("hidden");
+      retrieveCard.classList.remove("hidden");
     }
+    retrieveResult.classList.add("hidden");
+    uploadForm.reset();
+    retrieveForm.reset();
+    fileNameDisplay.textContent = "No file chosen";
+    fileLabel.textContent = "Choose File";
+  }
 
-    // --- 3. REFINED MAGNETIC NAVIGATION ---
-    const navItems = document.querySelectorAll('.nav-btn, .nav-brand');
-    navItems.forEach(item => {
-        item.addEventListener('mousemove', (e) => {
-            const rect = item.getBoundingClientRect();
-            // Calculate distance from center
-            const x = (e.clientX - rect.left - rect.width / 2) * 0.3; // Reduced multiplier to keep it in "box"
-            const y = (e.clientY - rect.top - rect.height / 2) * 0.3;
-            gsap.to(item, { x: x, y: y, duration: 0.3, ease: "power2.out" });
-        });
-        item.addEventListener('mouseleave', () => {
-            // Stronger snap back
-            gsap.to(item, { x: 0, y: 0, duration: 0.7, ease: "elastic.out(1.2, 0.4)" });
-        });
-    });
+  // Function to show the full-screen code
+  function showCodeView(code) {
+    finalDisplayCode.textContent = code;
+    mainAppContainer.classList.add("hidden");
+    codeDisplayView.classList.remove("hidden");
+  }
 
-    // --- 4. HD LIQUID PHYSICS (LERP) ---
-    let mouse = { x: 0, y: 0 };
-    let current = { x: 0, y: 0 };
+  // Function to dismiss the code and return to a clean upload view
+  function dismissCodeView() {
+    // Enforce session dismissal and clean state
+    setMode("upload");
 
-    document.addEventListener('mousemove', (e) => {
-        mouse.x = (e.clientX / window.innerWidth) - 0.5;
-        mouse.y = (e.clientY / window.innerHeight) - 0.5;
-    });
+    codeDisplayView.classList.add("hidden");
+    mainAppContainer.classList.remove("hidden");
+  }
 
-    function updateBackground() {
-        current.x += (mouse.x - current.x) * 0.05;
-        current.y += (mouse.y - current.y) * 0.05;
+  // --- EVENT LISTENERS ---
 
-        gsap.set('#orb-1', { x: current.x * 120, y: current.y * 120 });
-        gsap.set('#orb-2', { x: current.x * -180, y: current.y * -180 });
-        gsap.set('#orb-3', { x: current.x * 80, y: current.y * -80 });
+  // Initial setup
+  setMode("upload");
+  doneBtn.addEventListener("click", dismissCodeView);
+  uploadModeBtn.addEventListener("click", () => setMode("upload"));
+  retrieveModeBtn.addEventListener("click", () => setMode("retrieve"));
 
-        requestAnimationFrame(updateBackground);
+  // Custom File Input Display Logic
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length > 0) {
+      fileNameDisplay.textContent = fileInput.files[0].name;
+      fileLabel.textContent = "Change File";
+    } else {
+      fileNameDisplay.textContent = "No file chosen";
+      fileLabel.textContent = "Choose File";
     }
-    updateBackground();
+  });
 
-    // --- 5. MODE SWITCHING (OPACITY FIXED) ---
-    function setMode(mode) {
-        const target = mode === "upload" ? uploadCard : retrieveCard;
-        const other = mode === "upload" ? retrieveCard : uploadCard;
+  // NOTE: Removed Theme Toggle as your final screenshots didn't show the button,
+  // but the dark theme is enforced by the CSS body class.
 
-        if (target === other) return;
+  // --- UPLOAD Logic ---
+  uploadForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-        gsap.to(other, { opacity: 0, y: 20, duration: 0.3, onComplete: () => {
-            other.classList.add("hidden");
-            target.classList.remove("hidden");
-            // FIXED: Opacity set to 1 for full visibility
-            gsap.fromTo(target, 
-                { opacity: 0, y: -20 }, 
-                { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }
-            );
-        }});
+    const passwordInput = document.getElementById("upload-password");
 
-        uploadModeBtn.classList.toggle("active", mode === "upload");
-        retrieveModeBtn.classList.toggle("active", mode === "retrieve");
+    if (!fileInput.files.length) return alert("Please select a file.");
+    if (passwordInput.value.length < 6)
+      return alert("Password must be at least 6 characters long.");
+
+    const file = fileInput.files[0];
+    const password = passwordInput.value;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("password", password);
+
+    // UI Feedback: Show Uploading State
+    uploadSubmitBtn.classList.add("hidden");
+    uploadingState.classList.remove("hidden");
+
+    try {
+      // OLD
+      // const response = await fetch('/upload', { ... });
+
+      // NEW
+      const response = await fetch(`${API_BASE_URL}/api/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Success! Redirect to the full-screen code view
+        showCodeView(data.code);
+      } else {
+        alert(`Upload failed: ${data.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("A network error occurred during upload.");
+    } finally {
+      // Restore Submit Button State
+      uploadingState.classList.add("hidden");
+      uploadSubmitBtn.classList.remove("hidden");
     }
+  });
 
-    uploadModeBtn.addEventListener("click", () => setMode("upload"));
-    retrieveModeBtn.addEventListener("click", () => setMode("retrieve"));
+  // --- RETRIEVE Logic ---
+  retrieveForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-    fileInput.addEventListener("change", (e) => {
-        const name = e.target.files[0]?.name || "Initialize Packet";
-        fileNameDisplay.innerText = name.length > 20 ? name.substring(0, 17) + "..." : name;
-    });
+    const code = document.getElementById("retrieve-code").value;
+    const password = document.getElementById("retrieve-password").value;
 
-    document.querySelectorAll('form').forEach(f => {
-        f.addEventListener('submit', (e) => {
-            e.preventDefault();
-            createBubbleShot(e);
-        });
-    });
-});
-document.addEventListener("DOMContentLoaded", () => {
-    const fileInput = document.getElementById("file-input");
-    const fileNameDisplay = document.getElementById("file-name-display");
-    const dropZone = document.querySelector(".drop-trigger");
+    // Reset UI Feedback
+    retrieveResult.classList.add("hidden");
+    retrieveForm.querySelector(".primary-btn").disabled = true;
 
-    // 1. Prevent default browser behavior (opening the file)
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        }, false);
-    });
+    try {
+      // OLD
+      // const response = await fetch('/retrieve', { ... });
 
-    // 2. Add visual 'active' class when dragging over
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => {
-            dropZone.classList.add('drag-active');
-        }, false);
-    });
+      // NEW
+      const response = await fetch(`${API_BASE_URL}/api/retrieve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, password }),
+      });
 
-    // 3. Remove visual 'active' class when leaving or dropping
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => {
-            dropZone.classList.remove('drag-active');
-        }, false);
-    });
+      if (response.ok) {
+        // Success: Initiate file download
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get("Content-Disposition");
 
-    // 4. Handle the dropped file
-    dropZone.addEventListener('drop', (e) => {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-
-        if (files.length > 0) {
-            // Link the dropped file to the actual hidden input
-            fileInput.files = files; 
-            updateFileName(files[0]);
+        let filename = "downloaded_file";
+        if (
+          contentDisposition &&
+          contentDisposition.indexOf("attachment") !== -1
+        ) {
+          const matches = /filename="([^"]*)"/.exec(contentDisposition);
+          if (matches != null && matches[1]) {
+            filename = matches[1];
+          }
         }
-    }, false);
 
-    // 5. Still handle standard click-to-upload
-    fileInput.addEventListener("change", (e) => {
-        if (e.target.files.length > 0) {
-            updateFileName(e.target.files[0]);
-        }
-    });
+        // Create a temporary link element to trigger the download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
 
-    function updateFileName(file) {
-        const name = file.name;
-        fileNameDisplay.innerText = name.length > 20 ? name.substring(0, 17) + "..." : name;
-        
-        // Add a small GSAP pop effect if available
-        if (window.gsap) {
-            gsap.fromTo(fileNameDisplay, { scale: 0.8, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 });
-        }
+        // Show success status
+        alert("✅ File downloaded successfully!");
+      } else {
+        // Failure: Read the error message from the body
+        const data = await response.json();
+
+        // Show error message in the console/alert (matching the screenshot's error pop-up)
+        alert(
+          `Invalid Code or Password: ${
+            data.message ||
+            "The entered code and password combination is incorrect or expired."
+          }`
+        );
+
+        // You can optionally show a visual error bar/message if needed:
+        // retrieveResult.classList.remove('hidden');
+        // retrieveMessage.textContent = 'Invalid Code or Password';
+      }
+    } catch (error) {
+      console.error("Retrieval Error:", error);
+      alert("A network error occurred during retrieval.");
+    } finally {
+      retrieveForm.querySelector(".primary-btn").disabled = false;
     }
+  });
 });
