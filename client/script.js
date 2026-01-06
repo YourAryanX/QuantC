@@ -1,6 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
-    // Taken strictly from your old code
     const API_BASE_URL = 'https://quantc.onrender.com'; 
 
     // --- DOM ELEMENTS ---
@@ -101,13 +100,11 @@ document.addEventListener("DOMContentLoaded", () => {
         createBubbleShot(e); 
         toggleLoading('upload-card', true);
 
-        // Strict FormData construction from your old code
         const formData = new FormData();
         formData.append('file', file);
         formData.append('password', password);
 
         try {
-            // FIX: Uses /api/upload endpoint
             const response = await fetch(`${API_BASE_URL}/api/upload`, { 
                method: 'POST', 
                body: formData 
@@ -116,7 +113,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                // Success!
                 uploadForm.classList.add('hidden');
                 uploadResult.classList.remove('hidden');
                 generatedCodeSpan.innerText = data.code;
@@ -145,7 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
         toggleLoading('retrieve-card', true);
 
         try {
-            // FIX: Uses POST method and /api/retrieve endpoint (matching old code)
             const response = await fetch(`${API_BASE_URL}/api/retrieve`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -153,10 +148,8 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (response.ok) {
-                // Success: Handle Blob Download
                 const blob = await response.blob();
                 
-                // Extract filename from header if available
                 let filename = "downloaded_file";
                 const contentDisposition = response.headers.get("Content-Disposition");
                 if (contentDisposition && contentDisposition.indexOf("attachment") !== -1) {
@@ -166,7 +159,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }
 
-                // Trigger Download
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.style.display = "none";
@@ -179,7 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 showToast("File downloaded successfully!", "success");
             } else {
-                // Failure: Parse error message
                 const data = await response.json();
                 throw new Error(data.message || "Invalid Code or Password");
             }
