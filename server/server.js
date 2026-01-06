@@ -1,16 +1,16 @@
-// server.js (Final Production Version with CORS Fix)
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
+const axios = require('axios');        // FIX: Replaces 'fetch' to prevent crashes
+const streamifier = require('streamifier'); // FIX: Uploads from RAM directly
 
 const app = express();
+// Render assigns a port automatically, so we must use process.env.PORT
 const PORT = process.env.PORT || 3000;
 
 // ---------- Cloudinary Config ----------
@@ -20,39 +20,38 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// ---------- Middleware (UPDATED) ----------
+// ---------- Middleware ----------
 app.use(express.json());
 
-// ✅ FIX: Allow Frontend to read the filename header
+// ✅ FIX: Robust CORS for Render <-> Vercel
 app.use(cors({
-  origin: [
-      process.env.CLIENT_ORIGIN, 
-      "http://localhost:3000", 
-      "http://127.0.0.1:5500", 
-      "https://quantc.vercel.app", 
-      "https://quantc.netlify.app"
-  ], 
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    // Allow everything (Easiest for debugging "Failed to Fetch")
+    return callback(null, true);
+  },
   credentials: true,
-  exposedHeaders: ['Content-Disposition'] // This line is crucial for correct filenames
+  exposedHeaders: ['Content-Disposition'] 
 }));
 
-// ---------- Database ----------
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error("MongoDB Error:", err));
+// ---------- Database Connection ----------
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('✅ MongoDB connected');
+  } catch (err) {
+    console.error("❌ MongoDB Error:", err);
+  }
+};
+connectDB();
 
-// ---------- Multer ----------
-const UPLOAD_DIR = '/tmp'; 
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-
+// ---------- Multer (Memory Storage) ----------
+// FIX: Using MemoryStorage is safer and faster on Render than diskStorage
+const storage = multer.memoryStorage();
 const upload = multer({ 
     storage,
-    limits: { fileSize: 10 * 1024 * 1024 } 
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB Limit
 });
 
 // ---------- Schema ----------
@@ -65,6 +64,7 @@ const fileSchema = new mongoose.Schema({
   uploadDate: { type: Date, default: Date.now },
   expiresAt: { type: Date, required: true }
 });
+
 const File = mongoose.model('File', fileSchema);
 
 // ---------- Encryption Helpers ----------
@@ -92,38 +92,39 @@ function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+// ---------- Helper: Stream Upload ----------
+const streamUpload = (buffer) => {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            { resource_type: 'raw', folder: 'quantc_encrypted' },
+            (error, result) => {
+                if (result) resolve(result);
+                else reject(error);
+            }
+        );
+        streamifier.createReadStream(buffer).pipe(stream);
+    });
+};
+
 // ---------- Routes ----------
 const api = express.Router();
 
+// 1. Upload Route
 api.post('/upload', upload.single('file'), async (req, res) => {
   const { password } = req.body;
   const file = req.file;
 
   if (!file || !password) return res.status(400).json({ success: false, message: 'Missing file or password' });
 
-  const originalPath = file.path;
-  // FIX: Using .dat because Cloudinary blocks .bin
-  const safeBinPath = file.path + '.dat'; 
-
   try {
-    // 1. Encrypt
-    const fileBuffer = fs.readFileSync(originalPath);
-    const encryptedBuffer = encrypt(fileBuffer, password);
-    fs.writeFileSync(originalPath, encryptedBuffer);
+    console.log("Processing Upload...");
+    // Encrypt directly from RAM
+    const encryptedBuffer = encrypt(file.buffer, password);
 
-    // 2. Rename to .dat (Safe extension)
-    fs.renameSync(originalPath, safeBinPath);
+    // Upload to Cloudinary
+    const result = await streamUpload(encryptedBuffer);
 
-    // 3. Upload
-    const result = await cloudinary.uploader.upload(safeBinPath, {
-      resource_type: 'raw', // Important: Treat as raw data
-      folder: 'quantc_encrypted'
-    });
-
-    // Cleanup temp files
-    if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
-
-    // 4. Save DB Record
+    // Save DB
     const passwordHash = await bcrypt.hash(password, 10);
     let code;
     let isUnique = false;
@@ -143,21 +144,19 @@ api.post('/upload', upload.single('file'), async (req, res) => {
     });
     
     await newFile.save();
+    console.log(`✅ File uploaded: ${code}`);
     res.json({ success: true, code });
 
   } catch (error) {
-    console.error("UPLOAD ERROR:", error);
-    
-    // Cleanup
-    if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath);
-    if (fs.existsSync(safeBinPath)) fs.unlinkSync(safeBinPath);
-
+    console.error("❌ UPLOAD ERROR:", error);
     res.status(500).json({ success: false, message: `Server Error: ${error.message}` });
   }
 });
 
+// 2. Retrieve Route
 api.post('/retrieve', async (req, res) => {
   const { code, password } = req.body;
+  
   try {
     const fileRecord = await File.findOne({ code });
     if (!fileRecord) return res.status(404).json({ success: false, message: 'File not found' });
@@ -165,30 +164,40 @@ api.post('/retrieve', async (req, res) => {
     const isMatch = await bcrypt.compare(password, fileRecord.passwordHash);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Incorrect password' });
 
-    const response = await fetch(fileRecord.cloudinaryUrl);
-    if (!response.ok) throw new Error("Cloudinary fetch failed");
+    // FIX: Use axios instead of fetch
+    console.log(`Downloading from: ${fileRecord.cloudinaryUrl}`);
+    const response = await axios.get(fileRecord.cloudinaryUrl, {
+        responseType: 'arraybuffer'
+    });
     
-    const arrayBuffer = await response.arrayBuffer();
-    const encryptedBuffer = Buffer.from(arrayBuffer);
+    const encryptedBuffer = Buffer.from(response.data);
     const decryptedBuffer = decrypt(encryptedBuffer, password);
     
     if (!decryptedBuffer) return res.status(401).json({ success: false, message: 'Decryption failed' });
 
-    res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.originalName}"`);
+    console.log("Decryption success, sending file...");
+    
+    res.set({
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${fileRecord.originalName}"`,
+        'Access-Control-Expose-Headers': 'Content-Disposition'
+    });
+    
     res.send(decryptedBuffer);
 
   } catch (error) {
-    console.error(error);
+    console.error("❌ RETRIEVAL ERROR:", error);
     res.status(500).json({ success: false, message: `Retrieval Error: ${error.message}` });
   }
 });
 
 app.use('/api', api);
 
-// Cleanup
+// Cleanup Cron
 setInterval(async () => {
     try {
         const expired = await File.find({ expiresAt: { $lt: new Date() } });
+        if(expired.length > 0) console.log(`Cleaning up ${expired.length} expired files...`);
         for (const file of expired) {
             await cloudinary.uploader.destroy(file.cloudinaryPublicId, { resource_type: 'raw' });
             await File.deleteOne({ _id: file._id });
@@ -196,5 +205,5 @@ setInterval(async () => {
     } catch(e) {}
 }, 60 * 60 * 1000);
 
-const HOST = '0.0.0.0';
-app.listen(PORT, HOST, () => console.log(`Server running on ${HOST}:${PORT}`));
+// Start Server
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
