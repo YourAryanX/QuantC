@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     // Taken strictly from your old code
-    const API_BASE_URL = 'https://your-app-name.onrender.com'; 
+    const API_BASE_URL = 'https://quantc.onrender.com'; 
 
     // --- DOM ELEMENTS ---
     const uploadModeBtn = document.getElementById("upload-mode-btn");
