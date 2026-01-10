@@ -2,6 +2,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://quantc.onrender.com'; 
 
+    // !!! DEVELOPER MODE: UNCOMMENT TO FORCE TOUR FOR TESTING !!!
+    localStorage.removeItem("quantc_tour_seen"); 
+
     // --- DOM ELEMENTS ---
     const uploadModeBtn = document.getElementById("upload-mode-btn");
     const retrieveModeBtn = document.getElementById("retrieve-mode-btn");
@@ -18,18 +21,31 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetUploadBtn = document.getElementById("reset-upload-btn");
     const copyBtn = document.getElementById("copy-btn");
 
-    // --- 1. GSAP ENTRANCE ANIMATION SETUP (DELAYED) ---
+    // --- 1. ANIMATION LOGIC ---
+    
+    // Function A: The Grand Entrance (Animated)
     function playEntranceAnimations() {
         try {
+            const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
+            
+            // Force hidden state first to ensure animation plays visible change
             gsap.set(".nav-brand, .nav-btn", { x: -60, autoAlpha: 0 });
             gsap.set(".main-heading", { y: 50, autoAlpha: 0 });
-            gsap.set(".glass-hub:not(.hidden)", { scale: 0.95, autoAlpha: 0 });
+            gsap.set(".glass-hub:not(.hidden)", { scale: 0.95, autoAlpha: 0, y: 30 });
 
-            const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
+            // Play Animation
             tl.to(".nav-brand, .nav-btn", { x: 0, autoAlpha: 1, duration: 1.2, stagger: 0.1 })
               .to(".main-heading", { y: 0, autoAlpha: 1, duration: 1 }, "-=0.8")
-              .to(".glass-hub:not(.hidden)", { scale: 0.95, autoAlpha: 1, duration: 1.2 }, "-=0.7");
+              .to(".glass-hub:not(.hidden)", { scale: 1, y: 0, autoAlpha: 1, duration: 1.2 }, "-=0.7");
         } catch (e) { console.error("GSAP Error:", e); }
+    }
+
+    // Function B: Static Visibility (For Tour Context)
+    // We need elements visible so the tour can point to them, but without the "Entrance" flare yet.
+    function showStaticForTour() {
+        gsap.set(".nav-brand, .nav-btn", { x: 0, autoAlpha: 1 });
+        gsap.set(".main-heading", { y: 0, autoAlpha: 1 });
+        gsap.set(".glass-hub:not(.hidden)", { scale: 1, y: 0, autoAlpha: 1 });
     }
 
     // --- 2. TOAST SYSTEM ---
@@ -43,9 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if(type === 'error') icon = 'fa-exclamation-triangle';
         
         toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
-
         container.appendChild(toast);
-
         requestAnimationFrame(() => toast.classList.add('show'));
         setTimeout(() => {
             toast.classList.remove('show');
@@ -53,14 +67,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 3500);
     }
 
-    // --- 3. LOADING ---
+    // --- 3. LOADING & VISUALS ---
     function toggleLoading(cardId, isLoading) {
         const loader = document.getElementById(cardId).querySelector('.loading-overlay');
         if (isLoading) loader.classList.remove('hidden');
         else loader.classList.add('hidden');
     }
 
-    // --- 4. BUBBLE VISUALS ---
     function createBubbleShot(e) {
         if (!e || !e.submitter) return;
         const btn = e.submitter;
@@ -84,7 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- 5. UPLOAD & RETRIEVE LOGIC ---
+    // --- 4. CORE FUNCTIONALITY ---
     if(uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -103,10 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (response.ok && data.success) {
                     uploadForm.classList.add('hidden');
                     uploadResult.classList.remove('hidden');
-                    
-                    // Simple text update to keep it horizontal and simple
                     generatedCodeSpan.innerText = data.code;
-                    
                     gsap.fromTo("#upload-result", {opacity: 0, y: 20}, {opacity: 1, y: 0, duration: 0.5});
                     showToast("File encrypted successfully!", "success");
                 } else { throw new Error(data.message || "Upload failed"); }
@@ -154,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- 6. UTILITIES ---
+    // --- 5. UTILS ---
     if(resetUploadBtn) resetUploadBtn.addEventListener('click', () => {
         uploadResult.classList.add('hidden');
         uploadForm.classList.remove('hidden');
@@ -170,7 +180,6 @@ document.addEventListener("DOMContentLoaded", () => {
         gsap.to(copyBtn, { scale: 1.3, duration: 0.1, yoyo: true, repeat: 1 });
     });
 
-    // --- 7. DRAG & DROP ---
     if(dropZone) {
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
@@ -196,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
         gsap.fromTo(fileNameDisplay, { scale: 0.8, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 });
     }
 
-    // --- 8. BACKGROUND EFFECTS ---
+    // --- 6. BACKGROUND ANIMATION ---
     const navItems = document.querySelectorAll('.nav-btn, .nav-brand');
     navItems.forEach(item => {
         item.addEventListener('mousemove', (e) => {
@@ -239,7 +248,9 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadModeBtn.addEventListener("click", () => setMode("upload"));
     retrieveModeBtn.addEventListener("click", () => setMode("retrieve"));
 
-    // ================= TOUR SYSTEM (SMOOTH GSAP FIX) =================
+    // ============================================
+    // ============ TOUR SYSTEM ===================
+    // ============================================
 
     const tourStartModal = document.getElementById("tour-start-modal");
     const activeTourLayer = document.getElementById("active-tour-layer");
@@ -264,14 +275,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let currentTourIndex = 0;
 
-    localStorage.removeItem("quantc_tour_seen"); 
-
+    // --- MAIN INITIALIZATION LOGIC ---
+    // 1. Check if user is New or Returning
     if (!localStorage.getItem("quantc_tour_seen")) {
-        setTimeout(() => {
-            tourBackdrop.classList.remove("hidden");
-            tourStartModal.classList.remove("hidden");
-        }, 800);
+        // NEW USER:
+        // A. Show Tour Modal
+        tourBackdrop.classList.remove("hidden");
+        tourStartModal.classList.remove("hidden");
+        
+        // B. Make website elements visible STATICALLY so tour can point to them
+        // (We don't play the fancy animation yet, we save that for the end)
+        showStaticForTour();
     } else {
+        // RETURNING USER:
+        // A. Ensure Tour is Hidden
+        tourBackdrop.classList.add("hidden");
+        tourStartModal.classList.add("hidden");
+        
+        // B. Play Grand Entrance immediately
         playEntranceAnimations();
     }
 
@@ -281,9 +302,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     btnStartTour.addEventListener("click", () => {
-        tourStartModal.classList.add("hidden");
+        // Fade out modal to start tour
+        gsap.to(tourStartModal, { opacity: 0, duration: 0.3, onComplete: () => {
+            tourStartModal.classList.add("hidden");
+        }});
         activeTourLayer.classList.remove("hidden");
         activeTourLayer.style.zIndex = "10040"; 
+        
+        // Ensure static elements are visible for the tour
+        showStaticForTour();
         runTourStep(0);
     });
 
@@ -301,21 +328,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const step = tourSteps[index];
         const targetEl = document.querySelector(step.target);
 
-        // --- 1. SVG Anchor Visibility ---
         if(step.target === "#upload-mode-btn") {
             gsap.to(svgAnchor, { autoAlpha: 0, duration: 0.3 });
         } else {
             gsap.to(svgAnchor, { autoAlpha: 1, duration: 0.3 });
         }
 
-        // --- 2. Clean previous highlights ---
         document.querySelectorAll(".tour-focus-element").forEach(el => el.classList.remove("tour-focus-element"));
         document.querySelectorAll(".tour-elevated-parent").forEach(el => {
             el.classList.remove("tour-elevated-parent");
             el.classList.remove("tour-strip-visuals");
         });
 
-        // --- 3. Highlight new target ---
         if(targetEl) {
             targetEl.classList.add("tour-focus-element");
             const parentContainer = targetEl.closest('.floating-nav, .glass-hub');
@@ -323,22 +347,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 parentContainer.classList.add("tour-elevated-parent");
                 if(parentContainer.classList.contains("floating-nav")) parentContainer.classList.add("tour-strip-visuals");
             }
-            // Mobile scroll support
             const isNavBar = targetEl.closest('.floating-nav');
             if(window.innerWidth <= 768 && !isNavBar) {
                 targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
             }
         }
 
-        // --- 4. Update Text ---
         stepTitle.innerText = step.title;
         stepDesc.innerText = step.text;
         stepCounter.innerText = `${index + 1} / ${tourSteps.length}`;
         nextBtn.innerHTML = index === tourSteps.length - 1 ? 'Finish <i class="fa-solid fa-check"></i>' : 'Next <i class="fa-solid fa-chevron-right"></i>';
 
-        // --- 5. Trigger Animation (NO TIMEOUT) ---
         gsap.to(tooltip, { opacity: 1, duration: 0.5 });
-        updateLayout(targetEl, true); // true = animate
+        updateLayout(targetEl, true);
     }
 
     function updateLayout(targetEl, animate = false) {
@@ -346,13 +367,10 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const targetRect = targetEl.getBoundingClientRect();
         const tooltipRect = tooltip.getBoundingClientRect();
-        
         const targetX = targetRect.left + targetRect.width / 2;
         const targetY = targetRect.top + targetRect.height / 2;
-
         let toolX, toolY;
 
-        // --- Calculate Tooltip Position ---
         if (window.innerWidth > 768) {
             const offset = 60; 
             toolX = targetRect.right + offset;
@@ -371,48 +389,50 @@ document.addEventListener("DOMContentLoaded", () => {
             toolY = proposedY;
         }
 
-        // --- SMOOTH GSAP ANIMATION ---
         const duration = animate ? 0.6 : 0;
         const ease = animate ? "power3.out" : "none";
 
-        // 1. Move Tooltip using Transform (X/Y)
-        gsap.to(tooltip, { 
-            x: toolX, 
-            y: toolY, 
-            duration: duration, 
-            ease: ease 
-        });
+        gsap.to(tooltip, { x: toolX, y: toolY, duration: duration, ease: ease });
 
-        // 2. Animate Connector Line
-        const lineEnd = { 
-            x: toolX + tooltipRect.width / 2, 
-            y: toolY + tooltipRect.height / 2 
-        };
-
+        const lineEnd = { x: toolX + tooltipRect.width / 2, y: toolY + tooltipRect.height / 2 };
         if(svgLine) {
             gsap.to(svgLine, {
                 attr: { x1: targetX, y1: targetY, x2: lineEnd.x, y2: lineEnd.y },
-                duration: duration,
-                ease: ease
+                duration: duration, ease: ease
             });
             gsap.to(svgAnchor, {
                 attr: { cx: targetX, cy: targetY },
-                duration: duration,
-                ease: ease
+                duration: duration, ease: ease
             });
         }
     }
 
     function closeTour() {
-        tourBackdrop.classList.add("hidden");
-        tourStartModal.classList.add("hidden");
-        activeTourLayer.classList.add("hidden");
-        document.querySelectorAll(".tour-focus-element").forEach(el => el.classList.remove("tour-focus-element"));
-        document.querySelectorAll(".tour-elevated-parent").forEach(el => {
-            el.classList.remove("tour-elevated-parent");
-            el.classList.remove("tour-strip-visuals");
+        // --- THIS IS THE FIX ---
+        // 1. Fade out the Tour Elements
+        const exitTl = gsap.timeline({
+            onComplete: () => {
+                tourBackdrop.classList.add("hidden");
+                tourStartModal.classList.add("hidden");
+                activeTourLayer.classList.add("hidden");
+                
+                document.querySelectorAll(".tour-focus-element").forEach(el => el.classList.remove("tour-focus-element"));
+                document.querySelectorAll(".tour-elevated-parent").forEach(el => {
+                    el.classList.remove("tour-elevated-parent");
+                    el.classList.remove("tour-strip-visuals");
+                });
+
+                // 2. NOW Play the Grand Entrance Animation
+                // This ensures the user SEES the animation even if they skipped
+                playEntranceAnimations();
+            }
         });
-        playEntranceAnimations();
+
+        exitTl.to([tourBackdrop, tourStartModal, activeTourLayer, tooltip], { 
+            opacity: 0, 
+            duration: 0.1, 
+            ease: "power2.inOut" 
+        });
     }
 
     window.addEventListener("resize", () => {

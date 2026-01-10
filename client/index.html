@@ -9,9 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"> 
     <link rel="stylesheet" href="style.css">
+        <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600&family=Orbitron:wght@400;600&family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
-    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600&family=Orbitron:wght@400;600&family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-</head>
+    </head>
 <body>
     
     <div id="toast-container"></div>
@@ -63,27 +63,22 @@
                 <button type="submit" class="btn-glow-primary">GET CODE</button>
             </form>
 
+            <div id="upload-result" class="result-view hidden">
+                <div class="success-icon"><i class="fa-solid fa-check"></i></div>
+                <h3>Packet Secured</h3>
+                <p style="margin-bottom: 15px;">Use this code to retrieve your file.</p>
 
+                <div class="caution-box">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span><strong>Note:</strong> This code is valid for 24 hours only.</span>
+                </div>
+                <div class="code-display-box">
+                    <span id="generated-code">000000</span>
+                    <button id="copy-btn" title="Copy Code"><i class="fa-solid fa-copy"></i></button>
+                </div>
 
-           <div id="upload-result" class="result-view hidden">
-    <div class="success-icon"><i class="fa-solid fa-check"></i></div>
-    <h3>Packet Secured</h3>
-    <p style="margin-bottom: 15px;">Use this code to retrieve your file.</p>
-
-    <div class="caution-box">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-        <span><strong>Note:</strong> This code is valid for 24 hours only.</span>
-    </div>
-    <div class="code-display-box">
-        <span id="generated-code">000000</span>
-        <button id="copy-btn" title="Copy Code"><i class="fa-solid fa-copy"></i></button>
-    </div>
-
-    <button id="reset-upload-btn" class="btn-glow-primary" style="margin-top: 20px;">UPLOAD ANOTHER</button>
-</div>
-
-
-
+                <button id="reset-upload-btn" class="btn-glow-primary" style="margin-top: 20px;">UPLOAD ANOTHER</button>
+            </div>
         </div>
 
         <div id="retrieve-card" class="glass-hub hidden">
@@ -117,7 +112,7 @@
             <p>Would you like a quick interactive tour of the anonymous world?</p>
             
             <div class="tour-buttons" style="margin-top: 25px; display: flex; gap: 15px; justify-content: center;">
-                <button id="btn-skip-tour" class="nav-btn" style="width: auto; padding: 0 20px; font-size: 1rem;">Skip</button>
+                <button id="btn-skip-tour" class="tour-action-btn">Skip</button>
                 <button id="btn-start-tour" class="btn-glow-primary" style="width: auto;">Start Tour</button>
             </div>
         </div>
