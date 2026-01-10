@@ -1,3 +1,20 @@
+/* Paste this at the top of your CSS file */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden; /* This removes the scrollbar completely */
+}
+
+/* ... keep the rest of your existing CSS code below this ... */
+
+
 :root {
     --bg-main: #030712; 
     --accent: #818cf8;
@@ -13,7 +30,6 @@ body {
     margin: 0;
     background: var(--bg-main);
     color: var(--text-primary);
-    /* Changed from overflow:hidden to allow scrolling on mobile when keyboard opens */
     overflow-x: hidden;
     overflow-y: auto; 
     height: 100vh;
@@ -31,7 +47,6 @@ body {
     filter: url(#gooey-physics); 
 }
 
-/* High-Resolution Grain Texture */
 .background-canvas::after {
     content: "";
     position: absolute;
@@ -56,7 +71,7 @@ body {
 .b2 { width: 550px; height: 550px; background: radial-gradient(circle, #6366f1, transparent); bottom: -5%; right: 10%; }
 .b3 { width: 450px; height: 450px; background: radial-gradient(circle, #a855f7, transparent); top: 30%; left: 35%; opacity: 0.4; }
 
-/* --- Particle System for Bubble Shot --- */
+/* --- Particle System --- */
 #particle-container {
     position: fixed;
     inset: 0;
@@ -130,7 +145,6 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    /* Changed from exact 100vh to min-height to support mobile scrolling */
     min-height: 100vh;
     width: 100%;
     padding: 20px;
@@ -158,7 +172,7 @@ body {
     text-align: center;
 }
 
-/* --- High-Visibility Glass Card --- */
+/* --- Glass Hub --- */
 .glass-hub {
     background: rgba(255, 255, 255, 0.02);
     backdrop-filter: blur(60px) saturate(180%);
@@ -166,16 +180,15 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 40px;
     padding: 50px;
-    /* RESPONSIVE UPDATE: Use max-width and percentage */
     width: 100%;
     max-width: 420px;
     margin-top: 40px;
     box-shadow: 0 40px 100px rgba(0,0,0,0.5);
+    position: relative;
+    box-sizing: border-box;
     opacity: 1;
     transition: transform 0.3s ease;
-    position: relative;
     overflow: hidden;
-    box-sizing: border-box;
 }
 
 .glass-hub.hidden {
@@ -237,7 +250,7 @@ body {
     letter-spacing: 3px;
 }
 
-/* --- Input Fields & Buttons --- */
+/* --- Inputs --- */
 .input-glow-group { position: relative; margin-bottom: 15px; }
 
 .input-glow-group i {
@@ -293,7 +306,7 @@ input:focus {
     transform: scale(0.98);
 }
 
-/* --- Overlay & Result --- */
+/* --- Results --- */
 .loading-overlay {
     position: absolute;
     inset: 0;
@@ -331,6 +344,9 @@ input:focus {
     animation: fadeIn 0.5s ease;
 }
 
+.result-view h3{
+    margin-bottom: 10px;
+}
 .success-icon {
     width: 70px;
     height: 70px;
@@ -344,6 +360,25 @@ input:focus {
     margin-bottom: 20px;
     box-shadow: 0 0 30px rgba(74, 222, 128, 0.4);
 }
+
+/* === NEW CAUTION BOX STYLES === */
+.caution-box {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+    padding: 12px 15px;
+    background: rgba(250, 204, 21, 0.1);
+    border: 1px solid rgba(250, 204, 21, 0.3);
+    border-radius: 12px;
+    color: #facc15;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    text-align: left;
+}
+.caution-box i { font-size: 1.1rem; flex-shrink: 0; }
 
 .code-display-box {
     background: rgba(0, 0, 0, 0.4);
@@ -367,7 +402,6 @@ input:focus {
     letter-spacing: 6px;
     color: var(--accent);
     text-shadow: 0 0 15px var(--accent-glow);
-    /* Ensure code doesn't overflow on tiny screens */
     word-break: break-all;
 }
 
@@ -383,7 +417,7 @@ input:focus {
 
 #copy-btn:hover { color: white; transform: scale(1.1); }
 
-/* --- Toast Notifications --- */
+/* --- Toast --- */
 #toast-container {
     position: fixed;
     top: 20px;
@@ -418,7 +452,7 @@ input:focus {
 .toast.error { border-left-color: #f87171; }
 .toast.error i { color: #f87171; }
 
-.hidden { display: none !important; opacity: 0; }
+.hidden { display: none !important; opacity: 0 !important; }
 
 @keyframes fadeIn { 
     from { opacity: 0; transform: translateY(10px); } 
@@ -426,11 +460,172 @@ input:focus {
 }
 
 /* ========================================= */
+/* === FIXED TOUR SYSTEM STYLES (Performance) === */
+/* ========================================= */
+
+#tour-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 9998;
+    transition: opacity 0.5s ease;
+}
+
+/* This is the Highlighted Button (Plus Icon) */
+.tour-focus-element {
+    position: relative;
+    z-index: 10010 !important; 
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), 0 0 0 2px rgba(99, 102, 241, 1) !important;
+    background-color: #0f172a !important; 
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+/* The Container (Nav Bar or Card) */
+.tour-elevated-parent {
+    z-index: 10005 !important;
+    transition: none;
+    background: rgba(255, 255, 255, 0.03) !important;
+    backdrop-filter: blur(30px) !important;
+    border: 1px solid var(--glass-border) !important;
+}
+
+/* --- MOBILE SPECIFIC FIX --- */
+@media (max-width: 768px) {
+    .floating-nav.tour-elevated-parent {
+        position: fixed !important;
+        left: 50% !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: 20px !important;
+        transform: translateX(-50%) !important;
+        width: auto !important;
+        height: auto !important;
+        flex-direction: row !important; 
+        padding: 12px 25px !important;
+        border-radius: 50px !important;
+        display: flex !important;
+    }
+}
+
+/* --- DESKTOP SPECIFIC FIX --- */
+@media (min-width: 769px) {
+    .floating-nav.tour-elevated-parent {
+        position: fixed !important;
+        left: 30px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        width: auto !important;
+        max-width: 80px !important;
+        height: auto !important;
+        display: flex !important;
+        flex-direction: column !important;
+        padding: 20px 12px !important;
+        border-radius: 30px !important;
+    }
+}
+
+.glass-hub.tour-elevated-parent {
+    position: relative !important;
+}
+
+/* Tour Overlay Layers */
+#active-tour-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 10000; 
+    pointer-events: none;
+}
+
+#tour-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 10001; 
+}
+
+#tour-connector {
+    stroke: #818cf8;
+    stroke-width: 2px;
+    stroke-dasharray: 6;
+    animation: dash 60s linear infinite;
+    filter: drop-shadow(0 0 5px #818cf8);
+}
+
+#tour-anchor {
+    fill: #818cf8;
+    filter: drop-shadow(0 0 8px #818cf8);
+    z-index: -1;
+}
+
+/* --- PERFORMANCE FIX FOR TOOLTIP --- */
+.tour-tooltip {
+    position: absolute;
+    top: 0; 
+    left: 0;
+    margin: 0;
+    transform: translate3d(0,0,0); /* Force GPU */
+    will-change: transform, opacity;
+
+    max-width: 300px;
+    width: 90%; 
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid #818cf8;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    padding: 25px;
+    border-radius: 24px;
+    color: white;
+    z-index: 10050; 
+    opacity: 0;
+    pointer-events: auto;
+    box-sizing: border-box; 
+}
+
+.tour-tooltip h3 { margin: 0 0 10px 0; color: #818cf8; font-size: 1.2rem; }
+.tour-tooltip p { color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }
+
+.tour-controls {
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;
+}
+
+#tour-next-btn {
+    background: #818cf8; border: none; padding: 8px 18px;
+    border-radius: 8px; color: white; font-weight: 600; cursor: pointer;
+}
+
+/* Modal */
+.tour-modal-overlay {
+    position: fixed; inset: 0; z-index: 10060;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+}
+
+.tour-welcome-card {
+    background: #0f172a; 
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 30px; 
+    padding: 40px; 
+    text-align: center; 
+    max-width: 400px;
+    margin: 0 20px;
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), 0 0 0 2px rgba(99, 102, 241, 1);
+}
+
+.tour-welcome-card p { color: var(--accent); }
+
+@keyframes dash { to { stroke-dashoffset: 1000; } }
+
+/* ========================================= */
 /* === RESPONSIVE MEDIA QUERIES === */
 /* ========================================= */
 
 @media (max-width: 768px) {
-    /* 1. Transform Sidebar to Bottom Dock */
     .floating-nav {
         left: 50%;
         top: auto;
@@ -442,75 +637,26 @@ input:focus {
         border-radius: 50px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     }
-    
-    .nav-brand {
-        display: none; /* Hide branding in dock to save space */
-    }
-
-    /* 2. Adjust Layout Scaling */
+    .nav-brand { display: none; }
     .viewport {
-        padding: 80px 15px 120px 15px; /* Add bottom padding for the dock */
-        justify-content: flex-start; /* Allow content to flow naturally */
+        padding: 80px 15px 120px 15px; 
+        justify-content: flex-start; 
     }
-
-    .main-heading {
-        font-size: 3rem; /* Smaller heading */
-    }
-
-    .glass-hub {
-        padding: 30px;
-        margin-top: 25px;
-    }
-
-    /* 3. Improve Form Usability */
-    .drop-trigger {
-        padding: 25px;
-    }
-    
-    .pulse-icon {
-        width: 60px;
-        height: 60px;
-        font-size: 1.5rem;
-    }
-
-    /* 4. Fix Code Display overflow */
-    #generated-code {
-        font-size: 1.5rem;
-        letter-spacing: 3px;
-    }
-
-    /* 5. Mobile Toast Positioning */
+    .main-heading { font-size: 3rem; }
+    .glass-hub { padding: 30px; margin-top: 25px; }
+    .drop-trigger { padding: 25px; }
+    .pulse-icon { width: 60px; height: 60px; font-size: 1.5rem; }
+    #generated-code { font-size: 1.5rem; letter-spacing: 3px; }
     #toast-container {
-        top: auto;
-        bottom: 100px; /* Above the nav dock */
-        right: 50%;
-        transform: translateX(50%);
-        width: 90%;
-        align-items: center;
+        top: auto; bottom: 100px; right: 50%;
+        transform: translateX(50%); width: 90%; align-items: center;
     }
-    
-    .toast {
-        min-width: auto;
-        width: 100%;
-        box-sizing: border-box;
-    }
-    
-    /* 6. Prevent iOS Zoom on Inputs */
-    input {
-        font-size: 16px; 
-    }
-    
-    /* 7. Background Bubbles Scale Down */
-    .b1, .b2, .b3 {
-        transform: scale(0.6);
-    }
+    .toast { min-width: auto; width: 100%; box-sizing: border-box; }
+    input { font-size: 16px; }
+    .b1, .b2, .b3 { transform: scale(0.6); }
 }
 
 @media (max-height: 700px) {
-    .viewport {
-        padding-top: 40px;
-    }
-    .main-heading {
-        font-size: 2.5rem;
-    }
+    .viewport { padding-top: 40px; }
+    .main-heading { font-size: 2.5rem; }
 }
