@@ -180,6 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
             
             // For the LAST chunk, we MUST compute the range correctly relative to the *total encrypted size*
             // But since we don't know the total encrypted size upfront (encryption adds overhead),
+            
             // We use a stream-like approach: bytes start-end/total_unknown (-1)
             // This works for "auto" uploads in Cloudinary usually.
             
