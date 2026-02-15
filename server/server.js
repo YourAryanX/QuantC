@@ -2,130 +2,210 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const multer = require("multer");
+const crypto = require("crypto");
 const cors = require("cors");
 const cloudinary = require("cloudinary").v2;
+const axios = require("axios");
+const streamifier = require("streamifier");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ================= CONFIG ================= */
+/* ================= CLOUDINARY ================= */
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+/* ================= MIDDLEWARE ================= */
+
 app.use(express.json());
-app.use(cors({ origin: "*" }));
+app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
+    exposedHeaders: ["Content-Disposition"],
+  })
+);
 
 /* ================= DATABASE ================= */
+
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((e) => console.error("❌ MongoDB error:", e));
 
+/* ================= MULTER ================= */
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // Server-side limit 10MB
+});
+
+/* ================= SCHEMA ================= */
+
 const fileSchema = new mongoose.Schema({
   code: { type: String, unique: true },
   passwordHash: String,
-  parts: [String], // Array of shard URLs
+  cloudinaryUrl: String,
+  cloudinaryPublicId: String,
   originalName: String,
-  mimeType: String,
-  salt: String,
-  iv: String, // "sharded" or specific IV
-  createdAt: { type: Date, expires: '48h', default: Date.now }
+  expiresAt: Date,
 });
 
 const File = mongoose.model("File", fileSchema);
 
+/* ================= ENCRYPTION ================= */
+
+const ALGO = "aes-256-cbc";
+const IV_LEN = 16;
+
+function encrypt(buffer, password) {
+  const salt = crypto.randomBytes(64);
+  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, "sha512");
+  const iv = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv(ALGO, key, iv);
+  return Buffer.concat([salt, iv, cipher.update(buffer), cipher.final()]);
+}
+
+function decrypt(buffer, password) {
+  const salt = buffer.subarray(0, 64);
+  const iv = buffer.subarray(64, 64 + IV_LEN);
+  const data = buffer.subarray(64 + IV_LEN);
+  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, "sha512");
+  const decipher = crypto.createDecipheriv(ALGO, key, iv);
+  return Buffer.concat([decipher.update(data), decipher.final()]);
+}
+
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+/* ================= CLOUDINARY STREAM ================= */
+
+function streamUpload(buffer) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { resource_type: "raw", folder: "quantc_files" },
+      (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(stream);
+  });
+}
+
 /* ================= ROUTES ================= */
+
 const api = express.Router();
 
-// 1. HEALTH CHECK
-api.get("/health", (req, res) => res.json({ status: "alive" }));
-
-// 2. SIGNATURE ENDPOINT
-api.post("/sign-upload", (req, res) => {
-  const timestamp = Math.round((new Date).getTime() / 1000);
-  
-  // We strictly sign these parameters
-  const paramsToSign = {
-    timestamp: timestamp,
-    folder: 'quantc_shards', 
-  };
-  
-  const signature = cloudinary.utils.api_sign_request(
-    paramsToSign, 
-    process.env.CLOUDINARY_API_SECRET
-  );
-  
-  res.json({ 
-    signature, 
-    timestamp,
-    apiKey: process.env.CLOUDINARY_API_KEY,
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME
-  });
+/* 🔹 HEALTH CHECK */
+api.get("/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
-// 3. FINALIZE UPLOAD
-api.post("/finalize-upload", async (req, res) => {
+/* 🔹 UPLOAD */
+api.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    const { password, originalName, mimeType, parts, salt, iv } = req.body;
+    const { password } = req.body;
+    const file = req.file;
 
-    if (!parts || parts.length === 0) {
-      return res.status(400).json({ success: false, message: "No file parts received." });
+    if (!file || !password) {
+      return res.status(400).json({ success: false, message: "Missing data" });
     }
 
-    let code;
-    let exists = true;
-    while (exists) {
-      code = String(Math.floor(100000 + Math.random() * 900000));
-      exists = await File.exists({ code });
-    }
+    const encrypted = encrypt(file.buffer, password);
+    const uploadResult = await streamUpload(encrypted);
 
     const passwordHash = await bcrypt.hash(password, 10);
+
+    let code;
+    while (true) {
+      code = generateCode();
+      if (!(await File.findOne({ code }))) break;
+    }
 
     await File.create({
       code,
       passwordHash,
-      parts,
-      originalName,
-      mimeType,
-      salt,
-      iv
+      cloudinaryUrl: uploadResult.secure_url,
+      cloudinaryPublicId: uploadResult.public_id,
+      originalName: file.originalname,
+      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
     });
 
     res.json({ success: true, code });
   } catch (e) {
-    console.error("Save Error:", e);
-    res.status(500).json({ success: false, message: "Server Save Error" });
+    console.error("UPLOAD ERROR:", e);
+    res.status(500).json({
+      success: false,
+      message: e.message || "Upload failed",
+    });
   }
 });
 
-// 4. RETRIEVE METADATA
-api.post("/retrieve-meta", async (req, res) => {
+/* 🔹 RETRIEVE */
+api.post("/retrieve", async (req, res) => {
   try {
     const { code, password } = req.body;
+
     const file = await File.findOne({ code });
+    if (!file) {
+      return res.status(404).json({ success: false, message: "File not found" });
+    }
 
-    if (!file) return res.status(404).json({ success: false, message: "File not found" });
+    if (!(await bcrypt.compare(password, file.passwordHash))) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Wrong password" });
+    }
 
-    const isValid = await bcrypt.compare(password, file.passwordHash);
-    if (!isValid) return res.status(401).json({ success: false, message: "Wrong password" });
-
-    res.json({
-      success: true,
-      parts: file.parts,
-      originalName: file.originalName,
-      mimeType: file.mimeType,
-      salt: file.salt,
-      iv: file.iv
+    const response = await axios.get(file.cloudinaryUrl, {
+      responseType: "arraybuffer",
     });
 
+    const decrypted = decrypt(Buffer.from(response.data), password);
+
+    res.set({
+      "Content-Disposition": `attachment; filename="${file.originalName}"`,
+      "Content-Type": "application/octet-stream",
+    });
+
+    res.send(decrypted);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ success: false, message: "Server Error" });
+    console.error("RETRIEVE ERROR:", e);
+    res.status(500).json({
+      success: false,
+      message: e.message || "Retrieve failed",
+    });
   }
 });
 
 app.use("/api", api);
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+/* ================= GLOBAL ERROR ================= */
+
+app.use((err, req, res, next) => {
+  console.error("GLOBAL ERROR:", err);
+  // Multer Error Handling
+  if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ success: false, message: "File too large (Max 10MB)" });
+      }
+  }
+  res.status(500).json({
+    success: false,
+    message: err.message || "Internal server error",
+  });
+});
+
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
