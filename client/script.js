@@ -41,7 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return 'quantc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     }
 
-    // --- UPLOAD LOGIC (CHUNKED + RETRY) ---
+    // --- UPLOAD LOGIC ---
     if(uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -71,6 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
                 let currentChunk = 0;
+                let finalCloudinaryResponse = null; // Store the last response
 
                 // 3. Process & Upload Chunks
                 for (let start = 0; start < file.size; start += CHUNK_SIZE) {
@@ -93,25 +94,31 @@ document.addEventListener("DOMContentLoaded", () => {
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
 
-                    // Upload with Retry Logic
+                    // Upload
                     updateLoadingText(`Uploading Part ${currentChunk}/${totalChunks}...`);
                     
-                    // Note: We upload the *Encrypted* size, not original size. 
-                    // Cloudinary only cares about the bytes we send it.
-                    await uploadChunkWithRetry(
+                    const response = await uploadChunkWithRetry(
                         combinedBuffer, 
                         sigData, 
                         uniqueUploadId, 
                         start, 
                         end,
-                        file.size // This is just for progress tracking logic in loops
+                        file.size
                     );
+
+                    // Capture the response if it contains the URL (usually the last chunk)
+                    if (response && response.secure_url) {
+                        finalCloudinaryResponse = response;
+                    }
                 }
 
                 // 4. Finalize
-                updateLoadingText("Finalizing...");
-                const cloudUrl = `https://res.cloudinary.com/${sigData.cloudName}/raw/upload/v${sigData.timestamp}/${uniqueUploadId}`;
+                if (!finalCloudinaryResponse || !finalCloudinaryResponse.secure_url) {
+                    throw new Error("Upload finished but no URL returned from Cloudinary.");
+                }
 
+                updateLoadingText("Finalizing...");
+                
                 const finalRes = await fetch(`${API_BASE_URL}/api/finalize-upload`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -119,7 +126,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         password: password,
                         originalName: file.name,
                         mimeType: file.type,
-                        cloudinaryUrl: cloudUrl,
+                        cloudinaryUrl: finalCloudinaryResponse.secure_url, // USE REAL URL
                         publicId: uniqueUploadId,
                         salt: bytesToHex(fileSalt),
                         iv: "chunked"
@@ -149,7 +156,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- RETRY WRAPPER ---
     async function uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries = 3) {
         try {
-            return await uploadChunkToCloudinary(data, sigData, uploadId);
+            return await uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize);
         } catch (err) {
             if (retries > 0) {
                 console.warn(`Chunk failed. Retrying... (${retries} left)`);
@@ -162,7 +169,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- BASE UPLOADER (Fixed Content-Range) ---
-    function uploadChunkToCloudinary(data, sigData, uploadId) {
+    function uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/auto/upload`;
@@ -171,12 +178,10 @@ document.addEventListener("DOMContentLoaded", () => {
             
             xhr.setRequestHeader("X-Unique-Upload-Id", uploadId);
             
-            // FIX: Content-Range must match the data being SENT (the encrypted buffer),
-            // NOT the original file positions.
-            // Since we are uploading random encrypted blocks that Cloudinary stitches together,
-            // we can cheat by using a standard range header for the block size.
-            // OR simpler: Since we are using X-Unique-Upload-Id, Cloudinary treats this as a stream.
-            // We just need to tell it bytes 0-(length-1)/total_is_unknown (-1).
+            // For the LAST chunk, we MUST compute the range correctly relative to the *total encrypted size*
+            // But since we don't know the total encrypted size upfront (encryption adds overhead),
+            // We use a stream-like approach: bytes start-end/total_unknown (-1)
+            // This works for "auto" uploads in Cloudinary usually.
             
             const startByte = 0;
             const endByte = data.byteLength - 1;
@@ -194,7 +199,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     resolve(JSON.parse(xhr.responseText));
                 } else {
-                    // Try to parse error message from Cloudinary
                     let errMsg = xhr.statusText;
                     try { errMsg = JSON.parse(xhr.responseText).error.message; } catch(e){}
                     reject(new Error(errMsg));
@@ -206,7 +210,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- RETRIEVE LOGIC (CHUNKED DECRYPT) ---
+    // --- RETRIEVE LOGIC (Fixed 0 Byte Issue) ---
     if(retrieveForm) {
         retrieveForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -227,9 +231,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 updateLoadingText("Downloading...");
 
                 // 2. Download FULL file
-                const fileRes = await fetch(metaData.url);
+                // FIX: Added 'cache: no-store' to prevent caching stale 0b files
+                const fileRes = await fetch(metaData.url, { cache: "no-store" });
+                
+                // FIX: Check if download actually worked
+                if (!fileRes.ok) throw new Error(`Cloud download failed: ${fileRes.statusText}`);
+                
                 const fullArrayBuffer = await fileRes.arrayBuffer();
                 
+                if (fullArrayBuffer.byteLength === 0) {
+                    throw new Error("Downloaded file is empty (0 bytes). Upload likely failed.");
+                }
+
                 // 3. Decrypt
                 updateLoadingText("Decrypting...");
                 
@@ -239,26 +252,34 @@ document.addEventListener("DOMContentLoaded", () => {
                 const decryptedParts = [];
                 let offset = 0;
                 
-                // 10MB + 28 bytes overhead
-                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; 
+                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; // Chunk + Overhead
 
                 while (offset < fullArrayBuffer.byteLength) {
                     const remaining = fullArrayBuffer.byteLength - offset;
                     const currentSize = (remaining > ENC_CHUNK_SIZE) ? ENC_CHUNK_SIZE : remaining;
 
+                    // Safety break
                     if(currentSize <= 28) break;
 
                     const chunk = fullArrayBuffer.slice(offset, offset + currentSize);
+                    
+                    // Extract IV (12 bytes)
                     const iv = chunk.slice(0, 12);
+                    // Extract Data
                     const data = chunk.slice(12);
 
-                    const decryptedChunk = await window.crypto.subtle.decrypt(
-                        { name: "AES-GCM", iv: new Uint8Array(iv) }, 
-                        key, 
-                        data
-                    );
+                    try {
+                        const decryptedChunk = await window.crypto.subtle.decrypt(
+                            { name: "AES-GCM", iv: new Uint8Array(iv) }, 
+                            key, 
+                            data
+                        );
+                        decryptedParts.push(decryptedChunk);
+                    } catch (decErr) {
+                        console.error("Chunk Decrypt Fail:", decErr);
+                        throw new Error("File corruption or wrong password.");
+                    }
                     
-                    decryptedParts.push(decryptedChunk);
                     offset += currentSize;
                 }
 
@@ -278,14 +299,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
             } catch (error) {
                 console.error(error);
-                showToast("Decryption Error (Wrong Password?)", "error");
+                showToast(error.message, "error");
             } finally {
                 toggleLoading('retrieve-card', false);
             }
         });
     }
 
-    // --- UTILS & UI ---
+    // --- UTILS ---
     function showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
         if (!container) return; 
@@ -312,7 +333,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if(visibleLoader) visibleLoader.innerText = text;
     }
 
-    // --- ANIMATIONS ---
+    // --- ANIMATIONS & UI ---
     function playEntranceAnimations() {
         try {
             const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
@@ -357,9 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("Code copied", "success");
     });
     
-    // !!! FIX: REMOVED THE DUPLICATE CLICK LISTENER !!!
     if(dropZone) {
-        // Only keep drag listeners. Click is handled by HTML <label>
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
         dropZone.addEventListener('drop', (e) => {
