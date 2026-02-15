@@ -44,12 +44,12 @@ const api = express.Router();
 // 1. HEALTH CHECK
 api.get("/health", (req, res) => res.json({ status: "alive" }));
 
-// 2. SIGNATURE ENDPOINT (Fixed for Chunked Uploads)
+// 2. SIGNATURE ENDPOINT
 api.post("/sign-upload", (req, res) => {
   const timestamp = Math.round((new Date).getTime() / 1000);
-  const { public_id } = req.body; // Client sends the ID they want to use
+  const { public_id } = req.body; 
 
-  // We sign BOTH the timestamp and the public_id
+  // Cloudinary requires these EXACT params to be signed
   const paramsToSign = {
     timestamp: timestamp,
     folder: 'quantc_files',

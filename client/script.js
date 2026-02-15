@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://quantc.onrender.com'; 
-    const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB Chunks
+    const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB Chunks
 
     // Wake up server
     fetch(`${API_BASE_URL}/api/health`).catch(() => {});
@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const uniqueUploadId = generateUniqueId();
 
-                // 1. Get Signature (Passing the ID so it gets signed!)
+                // 1. Get Signature
                 const sigRes = await fetch(`${API_BASE_URL}/api/sign-upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -95,19 +95,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     // Upload with Retry Logic
                     updateLoadingText(`Uploading Part ${currentChunk}/${totalChunks}...`);
+                    
+                    // Note: We upload the *Encrypted* size, not original size. 
+                    // Cloudinary only cares about the bytes we send it.
                     await uploadChunkWithRetry(
                         combinedBuffer, 
                         sigData, 
                         uniqueUploadId, 
                         start, 
-                        end, 
-                        file.size
+                        end,
+                        file.size // This is just for progress tracking logic in loops
                     );
                 }
 
                 // 4. Finalize
                 updateLoadingText("Finalizing...");
-                // Cloudinary URL construction
                 const cloudUrl = `https://res.cloudinary.com/${sigData.cloudName}/raw/upload/v${sigData.timestamp}/${uniqueUploadId}`;
 
                 const finalRes = await fetch(`${API_BASE_URL}/api/finalize-upload`, {
@@ -147,11 +149,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- RETRY WRAPPER ---
     async function uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries = 3) {
         try {
-            return await uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize);
+            return await uploadChunkToCloudinary(data, sigData, uploadId);
         } catch (err) {
             if (retries > 0) {
                 console.warn(`Chunk failed. Retrying... (${retries} left)`);
-                await new Promise(r => setTimeout(r, 1000)); // Wait 1 sec
+                await new Promise(r => setTimeout(r, 1000));
                 return uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries - 1);
             } else {
                 throw err;
@@ -159,8 +161,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- BASE UPLOADER ---
-    function uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize) {
+    // --- BASE UPLOADER (Fixed Content-Range) ---
+    function uploadChunkToCloudinary(data, sigData, uploadId) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/auto/upload`;
@@ -168,12 +170,17 @@ document.addEventListener("DOMContentLoaded", () => {
             xhr.open("POST", url, true);
             
             xhr.setRequestHeader("X-Unique-Upload-Id", uploadId);
-            // Content-Range: bytes start-end/total
-            // Important: end is inclusive index.
-            // Cloudinary requires this header for chunked uploads
-            const rangeStart = start;
-            const rangeEnd = start + data.byteLength - 1;
-            xhr.setRequestHeader("Content-Range", `bytes ${rangeStart}-${rangeEnd}/${-1}`);
+            
+            // FIX: Content-Range must match the data being SENT (the encrypted buffer),
+            // NOT the original file positions.
+            // Since we are uploading random encrypted blocks that Cloudinary stitches together,
+            // we can cheat by using a standard range header for the block size.
+            // OR simpler: Since we are using X-Unique-Upload-Id, Cloudinary treats this as a stream.
+            // We just need to tell it bytes 0-(length-1)/total_is_unknown (-1).
+            
+            const startByte = 0;
+            const endByte = data.byteLength - 1;
+            xhr.setRequestHeader("Content-Range", `bytes ${startByte}-${endByte}/${-1}`);
 
             const formData = new FormData();
             formData.append("file", new Blob([data]));
@@ -187,7 +194,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     resolve(JSON.parse(xhr.responseText));
                 } else {
-                    reject(new Error("Chunk upload failed: " + xhr.statusText));
+                    // Try to parse error message from Cloudinary
+                    let errMsg = xhr.statusText;
+                    try { errMsg = JSON.parse(xhr.responseText).error.message; } catch(e){}
+                    reject(new Error(errMsg));
                 }
             };
             xhr.onerror = () => reject(new Error("Network Error"));
@@ -229,15 +239,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const decryptedParts = [];
                 let offset = 0;
                 
-                // Chunk size + Overhead (12 IV + 16 Tag = 28 bytes)
+                // 10MB + 28 bytes overhead
                 const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; 
 
                 while (offset < fullArrayBuffer.byteLength) {
                     const remaining = fullArrayBuffer.byteLength - offset;
-                    // Last chunk might be smaller
                     const currentSize = (remaining > ENC_CHUNK_SIZE) ? ENC_CHUNK_SIZE : remaining;
 
-                    // Safety check for very last small byte fragments
                     if(currentSize <= 28) break;
 
                     const chunk = fullArrayBuffer.slice(offset, offset + currentSize);
@@ -348,8 +356,10 @@ document.addEventListener("DOMContentLoaded", () => {
         navigator.clipboard.writeText(generatedCodeSpan.innerText);
         showToast("Code copied", "success");
     });
+    
+    // !!! FIX: REMOVED THE DUPLICATE CLICK LISTENER !!!
     if(dropZone) {
-        dropZone.addEventListener('click', () => fileInput.click());
+        // Only keep drag listeners. Click is handled by HTML <label>
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
         dropZone.addEventListener('drop', (e) => {
