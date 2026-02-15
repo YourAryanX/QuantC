@@ -1,8 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://quantc.onrender.com'; 
-    const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB Chunks
-    const OVERHEAD_PER_CHUNK = 28; // 12 bytes IV + 16 bytes Auth Tag
+    // 9MB Chunks (Safe Zone below 10MB limit)
+    const SHARD_SIZE = 9 * 1024 * 1024; 
 
     // Wake up server
     fetch(`${API_BASE_URL}/api/health`).catch(() => {});
@@ -39,10 +39,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function generateUniqueId() {
-        return 'quantc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        return 'shard_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     }
 
-    // --- UPLOAD LOGIC ---
+    // --- UPLOAD LOGIC (SHARDED) ---
     if(uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -52,90 +52,66 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!file) return showToast("Please select a file.", "error");
             if (password.length < 6) return showToast("Password must be 6+ chars.", "error");
 
-            toggleLoading('upload-card', true, "Initializing...");
+            toggleLoading('upload-card', true, "Initializing Shards...");
 
             try {
-                const uniqueUploadId = generateUniqueId();
-
                 // 1. Get Signature
                 const sigRes = await fetch(`${API_BASE_URL}/api/sign-upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ public_id: uniqueUploadId })
+                    body: JSON.stringify({ folder_id: 'init' })
                 });
                 const sigData = await sigRes.json();
                 if(!sigData.signature) throw new Error("Server signature failed");
 
-                // 2. Prepare Encryption & Calculate Sizes
+                // 2. Prepare Encryption
                 const fileSalt = window.crypto.getRandomValues(new Uint8Array(16));
                 const key = await deriveKey(password, fileSalt);
                 
-                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-                
-                // CRITICAL FIX: Calculate Exact Encrypted Total Size
-                // Cloudinary needs this to know when we are truly done.
-                // Encrypted Size = Original Size + (Total Chunks * 28 bytes overhead)
-                const encryptedTotalSize = file.size + (totalChunks * OVERHEAD_PER_CHUNK);
+                const totalShards = Math.ceil(file.size / SHARD_SIZE);
+                let currentShard = 0;
+                let uploadedUrls = []; // Store the URL of every shard
 
-                let currentChunk = 0;
-                let encryptedBytesUploaded = 0; // Track position in encrypted stream
-                let finalCloudinaryResponse = null;
-
-                // 3. Process & Upload Chunks
-                for (let start = 0; start < file.size; start += CHUNK_SIZE) {
-                    currentChunk++;
-                    const end = Math.min(start + CHUNK_SIZE, file.size);
+                // 3. Process & Upload Shards
+                for (let start = 0; start < file.size; start += SHARD_SIZE) {
+                    currentShard++;
+                    const end = Math.min(start + SHARD_SIZE, file.size);
                     const chunkBlob = file.slice(start, end);
                     const chunkBuffer = await chunkBlob.arrayBuffer();
 
-                    const progress = Math.round((start / file.size) * 100);
-                    updateLoadingText(`Encrypting Part ${currentChunk}/${totalChunks} (${progress}%)`);
+                    const progress = Math.round((currentShard / totalShards) * 100);
+                    updateLoadingText(`Encrypting Shard ${currentShard}/${totalShards} (${progress}%)`);
 
-                    // Encrypt Chunk
+                    // Encrypt Shard
                     const iv = window.crypto.getRandomValues(new Uint8Array(12));
                     const encryptedChunk = await window.crypto.subtle.encrypt(
                         { name: "AES-GCM", iv: iv }, key, chunkBuffer
                     );
 
-                    // Combine IV (12) + Data (Size + 16 Tag)
-                    // Total new size = Original Chunk Size + 28
+                    // Combine IV (12) + Data
                     const combinedBuffer = new Uint8Array(iv.length + encryptedChunk.byteLength);
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
 
-                    // Upload
-                    updateLoadingText(`Uploading Part ${currentChunk}/${totalChunks}...`);
+                    // Upload Shard as a Standalone File
+                    updateLoadingText(`Uploading Shard ${currentShard}/${totalShards}...`);
                     
-                    // We pass the explicit tracking variables to our upload function
-                    const response = await uploadChunkWithRetry(
+                    const shardId = generateUniqueId();
+                    const response = await uploadShardWithRetry(
                         combinedBuffer, 
-                        sigData, 
-                        uniqueUploadId, 
-                        encryptedBytesUploaded, // Where does this chunk start in ENCRYPTED stream?
-                        encryptedTotalSize      // What is the TOTAL ENCRYPTED size?
+                        sigData,
+                        shardId
                     );
 
-                    // Advance our tracker
-                    encryptedBytesUploaded += combinedBuffer.byteLength;
-
-                    // Capture URL if returned
                     if (response && response.secure_url) {
-                        finalCloudinaryResponse = response;
+                        uploadedUrls.push(response.secure_url);
+                    } else {
+                        throw new Error(`Shard ${currentShard} failed to return a URL`);
                     }
                 }
 
                 // 4. Finalize
-                if (!finalCloudinaryResponse || !finalCloudinaryResponse.secure_url) {
-                    // Fallback: If Cloudinary didn't send URL in the last chunk response (rare but possible),
-                    // we can construct it manually because we know the ID and it is confirmed uploaded.
-                    console.warn("URL missing from last chunk, using fallback construction.");
-                    finalCloudinaryResponse = {
-                        secure_url: `https://res.cloudinary.com/${sigData.cloudName}/raw/upload/v${sigData.timestamp}/${uniqueUploadId}`,
-                        public_id: uniqueUploadId
-                    };
-                }
-
-                updateLoadingText("Finalizing...");
+                updateLoadingText("Finalizing Index...");
                 
                 const finalRes = await fetch(`${API_BASE_URL}/api/finalize-upload`, {
                     method: "POST",
@@ -144,10 +120,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         password: password,
                         originalName: file.name,
                         mimeType: file.type,
-                        cloudinaryUrl: finalCloudinaryResponse.secure_url,
-                        publicId: uniqueUploadId,
+                        parts: uploadedUrls, // Send the list!
+                        publicId: 'sharded_set',
                         salt: bytesToHex(fileSalt),
-                        iv: "chunked"
+                        iv: "sharded"
                     })
                 });
 
@@ -172,34 +148,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- RETRY WRAPPER ---
-    async function uploadChunkWithRetry(data, sigData, uploadId, startByte, totalSize, retries = 3) {
+    async function uploadShardWithRetry(data, sigData, shardId, retries = 3) {
         try {
-            return await uploadChunkToCloudinary(data, sigData, uploadId, startByte, totalSize);
+            return await uploadShardToCloudinary(data, sigData, shardId);
         } catch (err) {
             if (retries > 0) {
-                console.warn(`Chunk failed. Retrying... (${retries} left)`);
+                console.warn(`Shard failed. Retrying... (${retries} left)`);
                 await new Promise(r => setTimeout(r, 1000));
-                return uploadChunkWithRetry(data, sigData, uploadId, startByte, totalSize, retries - 1);
+                return uploadShardWithRetry(data, sigData, shardId, retries - 1);
             } else {
                 throw err;
             }
         }
     }
 
-    // --- BASE UPLOADER (Fixed Content-Range) ---
-    function uploadChunkToCloudinary(data, sigData, uploadId, startByte, totalSize) {
+    // --- BASE UPLOADER (Standard Upload, No Ranges) ---
+    function uploadShardToCloudinary(data, sigData, shardId) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/auto/upload`;
             
             xhr.open("POST", url, true);
-            
-            xhr.setRequestHeader("X-Unique-Upload-Id", uploadId);
-            
-            // FIX: Exact Byte Math
-            // We tell Cloudinary: "This chunk starts at X, ends at Y, and the TOTAL file size is Z"
-            const endByte = startByte + data.byteLength - 1;
-            xhr.setRequestHeader("Content-Range", `bytes ${startByte}-${endByte}/${totalSize}`);
 
             const formData = new FormData();
             formData.append("file", new Blob([data]));
@@ -207,7 +176,10 @@ document.addEventListener("DOMContentLoaded", () => {
             formData.append("timestamp", sigData.timestamp);
             formData.append("signature", sigData.signature);
             formData.append("folder", "quantc_files");
-            formData.append("public_id", uploadId); 
+            // No public_id forced, let Cloudinary name it or use random
+            // Actually, best to let Cloudinary generate ID to avoid conflict or use random
+            // But we need to sign the request. 
+            // In the server we removed public_id from signature requirements for shards.
 
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
@@ -224,14 +196,14 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- RETRIEVE LOGIC ---
+    // --- RETRIEVE LOGIC (SHARDED) ---
     if(retrieveForm) {
         retrieveForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const code = document.getElementById('retrieve-code').value;
             const password = document.getElementById('retrieve-password').value;
             
-            toggleLoading('retrieve-card', true, "Locating...");
+            toggleLoading('retrieve-card', true, "Locating Shards...");
 
             try {
                 // 1. Get Meta
@@ -242,56 +214,48 @@ document.addEventListener("DOMContentLoaded", () => {
                 const metaData = await metaRes.json();
                 if(!metaData.success) throw new Error(metaData.message);
 
-                updateLoadingText("Downloading...");
-
-                // 2. Download FULL file
-                const fileRes = await fetch(metaData.url, { cache: "no-store" });
-                if (!fileRes.ok) throw new Error(`Cloud download failed: ${fileRes.statusText}`);
-                
-                const fullArrayBuffer = await fileRes.arrayBuffer();
-                
-                if (fullArrayBuffer.byteLength === 0) {
-                    throw new Error("File is empty (0 bytes).");
-                }
-
-                // 3. Decrypt
-                updateLoadingText("Decrypting...");
-                
                 const fileSalt = hexToBytes(metaData.salt);
                 const key = await deriveKey(password, fileSalt);
                 
-                const decryptedParts = [];
-                let offset = 0;
-                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; 
+                const decryptedShards = [];
+                const totalShards = metaData.parts.length;
 
-                while (offset < fullArrayBuffer.byteLength) {
-                    const remaining = fullArrayBuffer.byteLength - offset;
-                    const currentSize = (remaining > ENC_CHUNK_SIZE) ? ENC_CHUNK_SIZE : remaining;
+                // 2. Download & Decrypt Each Shard
+                for (let i = 0; i < totalShards; i++) {
+                    updateLoadingText(`Downloading Shard ${i+1}/${totalShards}...`);
+                    
+                    const url = metaData.parts[i];
+                    // Cache: no-store to prevent stale 0b reads
+                    const res = await fetch(url, { cache: "no-store" });
+                    if (!res.ok) throw new Error(`Shard ${i+1} download failed`);
+                    
+                    const buffer = await res.arrayBuffer();
+                    if (buffer.byteLength === 0) throw new Error(`Shard ${i+1} is empty`);
 
-                    if(currentSize <= 28) break; // Should not happen if size is correct
-
-                    const chunk = fullArrayBuffer.slice(offset, offset + currentSize);
-                    const iv = chunk.slice(0, 12);
-                    const data = chunk.slice(12);
+                    // Decrypt this shard
+                    updateLoadingText(`Decrypting Shard ${i+1}/${totalShards}...`);
+                    
+                    // Extract IV (first 12 bytes of THIS shard)
+                    const iv = buffer.slice(0, 12);
+                    const data = buffer.slice(12);
 
                     try {
-                        const decryptedChunk = await window.crypto.subtle.decrypt(
+                        const decrypted = await window.crypto.subtle.decrypt(
                             { name: "AES-GCM", iv: new Uint8Array(iv) }, 
                             key, 
                             data
                         );
-                        decryptedParts.push(decryptedChunk);
+                        decryptedShards.push(decrypted);
                     } catch (decErr) {
-                        console.error("Decrypt Fail:", decErr);
-                        throw new Error("Wrong Password or File Corrupted.");
+                        throw new Error("Wrong Password or Data Corrupt");
                     }
-                    
-                    offset += currentSize;
                 }
 
-                // 4. Save
-                const finalBlob = new Blob(decryptedParts, { type: metaData.mimeType });
+                // 3. Assemble
+                updateLoadingText("Assembling File...");
+                const finalBlob = new Blob(decryptedShards, { type: metaData.mimeType });
                 const url = window.URL.createObjectURL(finalBlob);
+                
                 const a = document.createElement("a");
                 a.style.display = "none";
                 a.href = url;
@@ -383,7 +347,6 @@ document.addEventListener("DOMContentLoaded", () => {
         navigator.clipboard.writeText(generatedCodeSpan.innerText);
         showToast("Code copied", "success");
     });
-    
     if(dropZone) {
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));

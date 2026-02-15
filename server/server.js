@@ -27,8 +27,8 @@ mongoose
 const fileSchema = new mongoose.Schema({
   code: { type: String, unique: true },
   passwordHash: String,
-  cloudinaryUrl: String,
-  cloudinaryPublicId: String,
+  parts: [String], // ARRAY of URLs (The Shards)
+  cloudinaryPublicId: String, // Base ID
   originalName: String,
   mimeType: String,
   salt: String,
@@ -47,15 +47,15 @@ api.get("/health", (req, res) => res.json({ status: "alive" }));
 // 2. SIGNATURE ENDPOINT
 api.post("/sign-upload", (req, res) => {
   const timestamp = Math.round((new Date).getTime() / 1000);
-  const { public_id } = req.body; 
+  const { folder_id } = req.body; 
 
-  // Cloudinary requires these EXACT params to be signed
   const paramsToSign = {
     timestamp: timestamp,
-    folder: 'quantc_files',
+    folder: 'quantc_files', // All shards go here
   };
   
-  if (public_id) paramsToSign.public_id = public_id;
+  // We don't sign public_id anymore because we generate random IDs for each shard
+  // This allows parallel uploads of shards without conflict
 
   const signature = cloudinary.utils.api_sign_request(
     paramsToSign, 
@@ -64,17 +64,16 @@ api.post("/sign-upload", (req, res) => {
   
   res.json({ 
     signature, 
-    timestamp, 
-    public_id,
+    timestamp,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME
   });
 });
 
-// 3. FINALIZE UPLOAD
+// 3. FINALIZE UPLOAD (Saves the list of shard URLs)
 api.post("/finalize-upload", async (req, res) => {
   try {
-    const { password, originalName, mimeType, cloudinaryUrl, publicId, salt, iv } = req.body;
+    const { password, originalName, mimeType, parts, publicId, salt, iv } = req.body;
 
     let code;
     let exists = true;
@@ -88,7 +87,7 @@ api.post("/finalize-upload", async (req, res) => {
     await File.create({
       code,
       passwordHash,
-      cloudinaryUrl,
+      parts, // Save all the URLs
       cloudinaryPublicId: publicId,
       originalName,
       mimeType,
@@ -116,7 +115,7 @@ api.post("/retrieve-meta", async (req, res) => {
 
     res.json({
       success: true,
-      url: file.cloudinaryUrl,
+      parts: file.parts, // Send back the list of URLs
       originalName: file.originalName,
       mimeType: file.mimeType,
       salt: file.salt,
