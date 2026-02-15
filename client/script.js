@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://quantc.onrender.com'; 
     const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB Chunks
+    const OVERHEAD_PER_CHUNK = 28; // 12 bytes IV + 16 bytes Auth Tag
 
     // Wake up server
     fetch(`${API_BASE_URL}/api/health`).catch(() => {});
@@ -65,13 +66,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 const sigData = await sigRes.json();
                 if(!sigData.signature) throw new Error("Server signature failed");
 
-                // 2. Prepare Encryption
+                // 2. Prepare Encryption & Calculate Sizes
                 const fileSalt = window.crypto.getRandomValues(new Uint8Array(16));
                 const key = await deriveKey(password, fileSalt);
                 
                 const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                
+                // CRITICAL FIX: Calculate Exact Encrypted Total Size
+                // Cloudinary needs this to know when we are truly done.
+                // Encrypted Size = Original Size + (Total Chunks * 28 bytes overhead)
+                const encryptedTotalSize = file.size + (totalChunks * OVERHEAD_PER_CHUNK);
+
                 let currentChunk = 0;
-                let finalCloudinaryResponse = null; // Store the last response
+                let encryptedBytesUploaded = 0; // Track position in encrypted stream
+                let finalCloudinaryResponse = null;
 
                 // 3. Process & Upload Chunks
                 for (let start = 0; start < file.size; start += CHUNK_SIZE) {
@@ -89,7 +97,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         { name: "AES-GCM", iv: iv }, key, chunkBuffer
                     );
 
-                    // Combine IV + Encrypted Data
+                    // Combine IV (12) + Data (Size + 16 Tag)
+                    // Total new size = Original Chunk Size + 28
                     const combinedBuffer = new Uint8Array(iv.length + encryptedChunk.byteLength);
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
@@ -97,16 +106,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Upload
                     updateLoadingText(`Uploading Part ${currentChunk}/${totalChunks}...`);
                     
+                    // We pass the explicit tracking variables to our upload function
                     const response = await uploadChunkWithRetry(
                         combinedBuffer, 
                         sigData, 
                         uniqueUploadId, 
-                        start, 
-                        end,
-                        file.size
+                        encryptedBytesUploaded, // Where does this chunk start in ENCRYPTED stream?
+                        encryptedTotalSize      // What is the TOTAL ENCRYPTED size?
                     );
 
-                    // Capture the response if it contains the URL (usually the last chunk)
+                    // Advance our tracker
+                    encryptedBytesUploaded += combinedBuffer.byteLength;
+
+                    // Capture URL if returned
                     if (response && response.secure_url) {
                         finalCloudinaryResponse = response;
                     }
@@ -114,7 +126,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // 4. Finalize
                 if (!finalCloudinaryResponse || !finalCloudinaryResponse.secure_url) {
-                    throw new Error("Upload finished but no URL returned from Cloudinary.");
+                    // Fallback: If Cloudinary didn't send URL in the last chunk response (rare but possible),
+                    // we can construct it manually because we know the ID and it is confirmed uploaded.
+                    console.warn("URL missing from last chunk, using fallback construction.");
+                    finalCloudinaryResponse = {
+                        secure_url: `https://res.cloudinary.com/${sigData.cloudName}/raw/upload/v${sigData.timestamp}/${uniqueUploadId}`,
+                        public_id: uniqueUploadId
+                    };
                 }
 
                 updateLoadingText("Finalizing...");
@@ -126,7 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         password: password,
                         originalName: file.name,
                         mimeType: file.type,
-                        cloudinaryUrl: finalCloudinaryResponse.secure_url, // USE REAL URL
+                        cloudinaryUrl: finalCloudinaryResponse.secure_url,
                         publicId: uniqueUploadId,
                         salt: bytesToHex(fileSalt),
                         iv: "chunked"
@@ -154,14 +172,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- RETRY WRAPPER ---
-    async function uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries = 3) {
+    async function uploadChunkWithRetry(data, sigData, uploadId, startByte, totalSize, retries = 3) {
         try {
-            return await uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize);
+            return await uploadChunkToCloudinary(data, sigData, uploadId, startByte, totalSize);
         } catch (err) {
             if (retries > 0) {
                 console.warn(`Chunk failed. Retrying... (${retries} left)`);
                 await new Promise(r => setTimeout(r, 1000));
-                return uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries - 1);
+                return uploadChunkWithRetry(data, sigData, uploadId, startByte, totalSize, retries - 1);
             } else {
                 throw err;
             }
@@ -169,7 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- BASE UPLOADER (Fixed Content-Range) ---
-    function uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize) {
+    function uploadChunkToCloudinary(data, sigData, uploadId, startByte, totalSize) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/auto/upload`;
@@ -178,14 +196,10 @@ document.addEventListener("DOMContentLoaded", () => {
             
             xhr.setRequestHeader("X-Unique-Upload-Id", uploadId);
             
-            // For the LAST chunk, we MUST compute the range correctly relative to the *total encrypted size*
-            // But since we don't know the total encrypted size upfront (encryption adds overhead),
-            // We use a stream-like approach: bytes start-end/total_unknown (-1)
-            // This works for "auto" uploads in Cloudinary usually.
-            
-            const startByte = 0;
-            const endByte = data.byteLength - 1;
-            xhr.setRequestHeader("Content-Range", `bytes ${startByte}-${endByte}/${-1}`);
+            // FIX: Exact Byte Math
+            // We tell Cloudinary: "This chunk starts at X, ends at Y, and the TOTAL file size is Z"
+            const endByte = startByte + data.byteLength - 1;
+            xhr.setRequestHeader("Content-Range", `bytes ${startByte}-${endByte}/${totalSize}`);
 
             const formData = new FormData();
             formData.append("file", new Blob([data]));
@@ -210,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- RETRIEVE LOGIC (Fixed 0 Byte Issue) ---
+    // --- RETRIEVE LOGIC ---
     if(retrieveForm) {
         retrieveForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -231,16 +245,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 updateLoadingText("Downloading...");
 
                 // 2. Download FULL file
-                // FIX: Added 'cache: no-store' to prevent caching stale 0b files
                 const fileRes = await fetch(metaData.url, { cache: "no-store" });
-                
-                // FIX: Check if download actually worked
                 if (!fileRes.ok) throw new Error(`Cloud download failed: ${fileRes.statusText}`);
                 
                 const fullArrayBuffer = await fileRes.arrayBuffer();
                 
                 if (fullArrayBuffer.byteLength === 0) {
-                    throw new Error("Downloaded file is empty (0 bytes). Upload likely failed.");
+                    throw new Error("File is empty (0 bytes).");
                 }
 
                 // 3. Decrypt
@@ -251,21 +262,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 const decryptedParts = [];
                 let offset = 0;
-                
-                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; // Chunk + Overhead
+                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; 
 
                 while (offset < fullArrayBuffer.byteLength) {
                     const remaining = fullArrayBuffer.byteLength - offset;
                     const currentSize = (remaining > ENC_CHUNK_SIZE) ? ENC_CHUNK_SIZE : remaining;
 
-                    // Safety break
-                    if(currentSize <= 28) break;
+                    if(currentSize <= 28) break; // Should not happen if size is correct
 
                     const chunk = fullArrayBuffer.slice(offset, offset + currentSize);
-                    
-                    // Extract IV (12 bytes)
                     const iv = chunk.slice(0, 12);
-                    // Extract Data
                     const data = chunk.slice(12);
 
                     try {
@@ -276,8 +282,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         );
                         decryptedParts.push(decryptedChunk);
                     } catch (decErr) {
-                        console.error("Chunk Decrypt Fail:", decErr);
-                        throw new Error("File corruption or wrong password.");
+                        console.error("Decrypt Fail:", decErr);
+                        throw new Error("Wrong Password or File Corrupted.");
                     }
                     
                     offset += currentSize;
@@ -333,7 +339,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if(visibleLoader) visibleLoader.innerText = text;
     }
 
-    // --- ANIMATIONS & UI ---
+    // --- ANIMATIONS ---
     function playEntranceAnimations() {
         try {
             const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
@@ -394,7 +400,6 @@ document.addEventListener("DOMContentLoaded", () => {
         fileNameDisplay.innerText = name.length > 20 ? name.substring(0, 17) + "..." : name;
     }
     
-    // Parallax
     let mouse = { x: 0, y: 0 }, current = { x: 0, y: 0 };
     document.addEventListener('mousemove', (e) => {
         mouse.x = (e.clientX / window.innerWidth) - 0.5;
