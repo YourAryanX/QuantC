@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://quantc.onrender.com'; 
-    const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB Chunks (Safe for low-end phones)
+    const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB Chunks
 
     // Wake up server
     fetch(`${API_BASE_URL}/api/health`).catch(() => {});
@@ -38,10 +38,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function generateUniqueId() {
-        return 'upload_' + Date.now() + Math.random().toString(36).substr(2, 9);
+        return 'quantc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     }
 
-    // --- UPLOAD LOGIC (CHUNKED) ---
+    // --- UPLOAD LOGIC (CHUNKED + RETRY) ---
     if(uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -54,18 +54,21 @@ document.addEventListener("DOMContentLoaded", () => {
             toggleLoading('upload-card', true, "Initializing...");
 
             try {
-                // 1. Get Signature
-                const sigRes = await fetch(`${API_BASE_URL}/api/sign-upload`);
+                const uniqueUploadId = generateUniqueId();
+
+                // 1. Get Signature (Passing the ID so it gets signed!)
+                const sigRes = await fetch(`${API_BASE_URL}/api/sign-upload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ public_id: uniqueUploadId })
+                });
                 const sigData = await sigRes.json();
                 if(!sigData.signature) throw new Error("Server signature failed");
 
                 // 2. Prepare Encryption
                 const fileSalt = window.crypto.getRandomValues(new Uint8Array(16));
                 const key = await deriveKey(password, fileSalt);
-                const uniqueUploadId = generateUniqueId();
                 
-                // We will count total size AFTER encryption (Cipher + IV + Tag overhead)
-                // AES-GCM adds 16 bytes tag + 12 bytes IV = 28 bytes overhead per chunk
                 const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
                 let currentChunk = 0;
 
@@ -76,7 +79,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     const chunkBlob = file.slice(start, end);
                     const chunkBuffer = await chunkBlob.arrayBuffer();
 
-                    // Update UI
                     const progress = Math.round((start / file.size) * 100);
                     updateLoadingText(`Encrypting Part ${currentChunk}/${totalChunks} (${progress}%)`);
 
@@ -86,32 +88,26 @@ document.addEventListener("DOMContentLoaded", () => {
                         { name: "AES-GCM", iv: iv }, key, chunkBuffer
                     );
 
-                    // Append IV to the START of the chunk so we can decrypt it later
-                    // Format: [IV (12 bytes)] + [Encrypted Data]
+                    // Combine IV + Encrypted Data
                     const combinedBuffer = new Uint8Array(iv.length + encryptedChunk.byteLength);
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
 
-                    // Upload Chunk
+                    // Upload with Retry Logic
                     updateLoadingText(`Uploading Part ${currentChunk}/${totalChunks}...`);
-                    await uploadChunkToCloudinary(
+                    await uploadChunkWithRetry(
                         combinedBuffer, 
                         sigData, 
                         uniqueUploadId, 
                         start, 
                         end, 
-                        file.size,
-                        currentChunk === totalChunks // Is this the last chunk?
+                        file.size
                     );
                 }
 
                 // 4. Finalize
                 updateLoadingText("Finalizing...");
-                // Note: The final URL is determined by Cloudinary based on the ID
-                // We construct the URL manually or assume standard naming convention, 
-                // but usually Cloudinary returns the full response on the LAST chunk.
-                // For simplicity in this demo, we assume the upload worked if no errors were thrown.
-                // We just need to construct the URL for the metadata.
+                // Cloudinary URL construction
                 const cloudUrl = `https://res.cloudinary.com/${sigData.cloudName}/raw/upload/v${sigData.timestamp}/${uniqueUploadId}`;
 
                 const finalRes = await fetch(`${API_BASE_URL}/api/finalize-upload`, {
@@ -124,7 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         cloudinaryUrl: cloudUrl,
                         publicId: uniqueUploadId,
                         salt: bytesToHex(fileSalt),
-                        iv: "chunked" // Mark as chunked for retrieval logic
+                        iv: "chunked"
                     })
                 });
 
@@ -148,39 +144,44 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Helper: Upload a single chunk to Cloudinary
-    function uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize, isLast) {
+    // --- RETRY WRAPPER ---
+    async function uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries = 3) {
+        try {
+            return await uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize);
+        } catch (err) {
+            if (retries > 0) {
+                console.warn(`Chunk failed. Retrying... (${retries} left)`);
+                await new Promise(r => setTimeout(r, 1000)); // Wait 1 sec
+                return uploadChunkWithRetry(data, sigData, uploadId, start, end, totalSize, retries - 1);
+            } else {
+                throw err;
+            }
+        }
+    }
+
+    // --- BASE UPLOADER ---
+    function uploadChunkToCloudinary(data, sigData, uploadId, start, end, totalSize) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/auto/upload`;
             
             xhr.open("POST", url, true);
             
-            // Required Headers for Chunked Upload
             xhr.setRequestHeader("X-Unique-Upload-Id", uploadId);
             // Content-Range: bytes start-end/total
-            // Note: 'end' in Content-Range is inclusive (byte index), so we use (end - 1) unless it's 0 length
-            // But we are uploading the *Encrypted* size, which is larger. 
-            // Cloudinary's raw upload doesn't strictly validate total size if we send -1, 
-            // but for safety with "auto" resource type, we act as if we are appending.
-            // Actually, simpler approach: Use 'upload_preset' if unsigned, but we are signed.
-            // Cloudinary REST API for chunked upload via X-Unique-Upload-Id handles the stitching.
-            
+            // Important: end is inclusive index.
+            // Cloudinary requires this header for chunked uploads
+            const rangeStart = start;
+            const rangeEnd = start + data.byteLength - 1;
+            xhr.setRequestHeader("Content-Range", `bytes ${rangeStart}-${rangeEnd}/${-1}`);
+
             const formData = new FormData();
             formData.append("file", new Blob([data]));
             formData.append("api_key", sigData.apiKey);
             formData.append("timestamp", sigData.timestamp);
             formData.append("signature", sigData.signature);
             formData.append("folder", "quantc_files");
-            formData.append("public_id", uploadId); // Force the ID to match our chunks
-
-            // Crucial: The Content-Range header is set by the browser automatically for some requests,
-            // but for Cloudinary via FormData, it relies on the Content-Range header ON THE REQUEST.
-            // Since we are using FormData, setting Content-Range header on XHR might conflict.
-            // Cloudinary's "upload_large" usually handles this via SDK. 
-            // For manual implementation, we use the header:
-            const contentRange = `bytes ${start}-${start + data.byteLength - 1}/${-1}`; 
-            xhr.setRequestHeader("Content-Range", contentRange);
+            formData.append("public_id", uploadId); 
 
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
@@ -215,18 +216,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 updateLoadingText("Downloading...");
 
-                // 2. Download the FULL file (It's stitched on Cloudinary)
+                // 2. Download FULL file
                 const fileRes = await fetch(metaData.url);
                 const fullArrayBuffer = await fileRes.arrayBuffer();
                 
-                // 3. Decrypt Chunk-by-Chunk from RAM
-                // Note: For download on low-end device, we ideally stream this too.
-                // But native Fetch streams + Crypto is complex. 
-                // For now, we assume download RAM is slightly more forgiving or 
-                // the user accepts a limit on download size on mobile. 
-                // To truly fix download crashes on 10k phone, we'd need StreamSaver.js.
-                // Proceeding with basic buffer loop for simplicity (better than before).
-                
+                // 3. Decrypt
                 updateLoadingText("Decrypting...");
                 
                 const fileSalt = hexToBytes(metaData.salt);
@@ -235,21 +229,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 const decryptedParts = [];
                 let offset = 0;
                 
-                // We need to know the encrypted chunk size. 
-                // Since we added 12 bytes IV + 16 bytes tag = 28 bytes overhead.
-                // Original chunk = 6MB. Encrypted chunk = 6MB + 28 bytes.
-                // Except the last chunk which is smaller.
-                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; // 12 IV + 16 Tag
+                // Chunk size + Overhead (12 IV + 16 Tag = 28 bytes)
+                const ENC_CHUNK_SIZE = CHUNK_SIZE + 28; 
 
                 while (offset < fullArrayBuffer.byteLength) {
-                    // Calculate current chunk size
                     const remaining = fullArrayBuffer.byteLength - offset;
-                    // If remaining is roughly chunk size (allow small variance for last chunk)
+                    // Last chunk might be smaller
                     const currentSize = (remaining > ENC_CHUNK_SIZE) ? ENC_CHUNK_SIZE : remaining;
 
+                    // Safety check for very last small byte fragments
+                    if(currentSize <= 28) break;
+
                     const chunk = fullArrayBuffer.slice(offset, offset + currentSize);
-                    
-                    // Extract IV (First 12 bytes)
                     const iv = chunk.slice(0, 12);
                     const data = chunk.slice(12);
 
@@ -286,7 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- UTILS ---
+    // --- UTILS & UI ---
     function showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
         if (!container) return; 
@@ -373,7 +364,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const name = file.name;
         fileNameDisplay.innerText = name.length > 20 ? name.substring(0, 17) + "..." : name;
     }
-
+    
     // Parallax
     let mouse = { x: 0, y: 0 }, current = { x: 0, y: 0 };
     document.addEventListener('mousemove', (e) => {
@@ -381,4 +372,12 @@ document.addEventListener("DOMContentLoaded", () => {
         mouse.y = (e.clientY / window.innerHeight) - 0.5;
     });
     function updateBackground() {
-        current.x += (mouse.x - current.x) * 0
+        current.x += (mouse.x - current.x) * 0.05;
+        current.y += (mouse.y - current.y) * 0.05;
+        gsap.set('#orb-1', { x: current.x * 120, y: current.y * 120 });
+        gsap.set('#orb-2', { x: current.x * -180, y: current.y * -180 });
+        gsap.set('#orb-3', { x: current.x * 80, y: current.y * -80 });
+        requestAnimationFrame(updateBackground);
+    }
+    updateBackground();
+});

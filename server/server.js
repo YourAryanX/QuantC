@@ -31,8 +31,8 @@ const fileSchema = new mongoose.Schema({
   cloudinaryPublicId: String,
   originalName: String,
   mimeType: String,
-  salt: String, // Hex string
-  iv: String,   // Hex string
+  salt: String,
+  iv: String,
   createdAt: { type: Date, expires: '48h', default: Date.now }
 });
 
@@ -41,33 +41,41 @@ const File = mongoose.model("File", fileSchema);
 /* ================= ROUTES ================= */
 const api = express.Router();
 
-// 1. HEALTH CHECK (Wakes up Render)
+// 1. HEALTH CHECK
 api.get("/health", (req, res) => res.json({ status: "alive" }));
 
-// 2. SIGNATURE ENDPOINT (The Key to Direct Uploads)
-api.get("/sign-upload", (req, res) => {
-  const timestamp = Math.round((new Date).getTime()/1000);
-  
-  // Generate a signature so Cloudinary trusts the browser upload
-  const signature = cloudinary.utils.api_sign_request({
+// 2. SIGNATURE ENDPOINT (Fixed for Chunked Uploads)
+api.post("/sign-upload", (req, res) => {
+  const timestamp = Math.round((new Date).getTime() / 1000);
+  const { public_id } = req.body; // Client sends the ID they want to use
+
+  // We sign BOTH the timestamp and the public_id
+  const paramsToSign = {
     timestamp: timestamp,
-    folder: 'quantc_files'
-  }, process.env.CLOUDINARY_API_SECRET);
+    folder: 'quantc_files',
+  };
+  
+  if (public_id) paramsToSign.public_id = public_id;
+
+  const signature = cloudinary.utils.api_sign_request(
+    paramsToSign, 
+    process.env.CLOUDINARY_API_SECRET
+  );
   
   res.json({ 
     signature, 
     timestamp, 
+    public_id,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME
   });
 });
 
-// 3. SAVE METADATA (After Browser Uploads Successfully)
+// 3. FINALIZE UPLOAD
 api.post("/finalize-upload", async (req, res) => {
   try {
     const { password, originalName, mimeType, cloudinaryUrl, publicId, salt, iv } = req.body;
 
-    // Generate unique 6-digit code
     let code;
     let exists = true;
     while (exists) {
@@ -95,7 +103,7 @@ api.post("/finalize-upload", async (req, res) => {
   }
 });
 
-// 4. RETRIEVE METADATA (Browser needs this to download & decrypt)
+// 4. RETRIEVE METADATA
 api.post("/retrieve-meta", async (req, res) => {
   try {
     const { code, password } = req.body;
