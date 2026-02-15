@@ -1,8 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://quantc.onrender.com'; 
-    // 9MB Chunks (Safe Zone below 10MB limit)
-    const SHARD_SIZE = 9 * 1024 * 1024; 
+    const SHARD_SIZE = 9 * 1024 * 1024; // 9MB Chunks (Safe Zone)
 
     // Wake up server
     fetch(`${API_BASE_URL}/api/health`).catch(() => {});
@@ -42,7 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return 'shard_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     }
 
-    // --- UPLOAD LOGIC (SHARDED) ---
+    // --- UPLOAD LOGIC ---
     if(uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -70,7 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 const totalShards = Math.ceil(file.size / SHARD_SIZE);
                 let currentShard = 0;
-                let uploadedUrls = []; // Store the URL of every shard
+                let uploadedUrls = [];
 
                 // 3. Process & Upload Shards
                 for (let start = 0; start < file.size; start += SHARD_SIZE) {
@@ -88,12 +87,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         { name: "AES-GCM", iv: iv }, key, chunkBuffer
                     );
 
-                    // Combine IV (12) + Data
+                    // Combine IV + Data
                     const combinedBuffer = new Uint8Array(iv.length + encryptedChunk.byteLength);
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
 
-                    // Upload Shard as a Standalone File
                     updateLoadingText(`Uploading Shard ${currentShard}/${totalShards}...`);
                     
                     const shardId = generateUniqueId();
@@ -120,7 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         password: password,
                         originalName: file.name,
                         mimeType: file.type,
-                        parts: uploadedUrls, // Send the list!
+                        parts: uploadedUrls,
                         publicId: 'sharded_set',
                         salt: bytesToHex(fileSalt),
                         iv: "sharded"
@@ -162,24 +160,23 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- BASE UPLOADER (Standard Upload, No Ranges) ---
+    // --- BASE UPLOADER (Fixed for RAW) ---
     function uploadShardToCloudinary(data, sigData, shardId) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/auto/upload`;
+            
+            // FIX 1: Use 'raw' instead of 'auto' to prevent processing delays
+            const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/raw/upload`;
             
             xhr.open("POST", url, true);
 
             const formData = new FormData();
-            formData.append("file", new Blob([data]));
+            // FIX 2: Add .bin extension so Cloudinary knows it's binary data
+            formData.append("file", new Blob([data]), "shard.bin");
             formData.append("api_key", sigData.apiKey);
             formData.append("timestamp", sigData.timestamp);
             formData.append("signature", sigData.signature);
             formData.append("folder", "quantc_files");
-            // No public_id forced, let Cloudinary name it or use random
-            // Actually, best to let Cloudinary generate ID to avoid conflict or use random
-            // But we need to sign the request. 
-            // In the server we removed public_id from signature requirements for shards.
 
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
@@ -196,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- RETRIEVE LOGIC (SHARDED) ---
+    // --- RETRIEVE LOGIC ---
     if(retrieveForm) {
         retrieveForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -220,22 +217,21 @@ document.addEventListener("DOMContentLoaded", () => {
                 const decryptedShards = [];
                 const totalShards = metaData.parts.length;
 
-                // 2. Download & Decrypt Each Shard
+                // 2. Download & Decrypt
                 for (let i = 0; i < totalShards; i++) {
                     updateLoadingText(`Downloading Shard ${i+1}/${totalShards}...`);
                     
                     const url = metaData.parts[i];
-                    // Cache: no-store to prevent stale 0b reads
-                    const res = await fetch(url, { cache: "no-store" });
-                    if (!res.ok) throw new Error(`Shard ${i+1} download failed`);
+                    // FIX 3: mode: 'cors' ensures we can fetch across domains
+                    const res = await fetch(url, { cache: "no-store", mode: 'cors' });
+                    
+                    if (!res.ok) throw new Error(`Shard ${i+1} download failed: ${res.status}`);
                     
                     const buffer = await res.arrayBuffer();
                     if (buffer.byteLength === 0) throw new Error(`Shard ${i+1} is empty`);
 
-                    // Decrypt this shard
                     updateLoadingText(`Decrypting Shard ${i+1}/${totalShards}...`);
                     
-                    // Extract IV (first 12 bytes of THIS shard)
                     const iv = buffer.slice(0, 12);
                     const data = buffer.slice(12);
 
@@ -276,7 +272,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- UTILS ---
+    // --- UTILS & UI ---
     function showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
         if (!container) return; 
