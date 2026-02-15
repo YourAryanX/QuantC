@@ -37,10 +37,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    function generateUniqueId() {
-        return 'shard_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    }
-
     // --- UPLOAD LOGIC ---
     if(uploadForm) {
         uploadForm.addEventListener('submit', async (e) => {
@@ -58,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const sigRes = await fetch(`${API_BASE_URL}/api/sign-upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folder_id: 'init' })
+                    body: JSON.stringify({})
                 });
                 const sigData = await sigRes.json();
                 if(!sigData.signature) throw new Error("Server signature failed");
@@ -87,18 +83,17 @@ document.addEventListener("DOMContentLoaded", () => {
                         { name: "AES-GCM", iv: iv }, key, chunkBuffer
                     );
 
-                    // Combine IV + Data
+                    // Combine IV (12) + Data
                     const combinedBuffer = new Uint8Array(iv.length + encryptedChunk.byteLength);
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
 
                     updateLoadingText(`Uploading Shard ${currentShard}/${totalShards}...`);
                     
-                    const shardId = generateUniqueId();
+                    // Upload Shard
                     const response = await uploadShardWithRetry(
                         combinedBuffer, 
-                        sigData,
-                        shardId
+                        sigData
                     );
 
                     if (response && response.secure_url) {
@@ -119,7 +114,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         originalName: file.name,
                         mimeType: file.type,
                         parts: uploadedUrls,
-                        publicId: 'sharded_set',
                         salt: bytesToHex(fileSalt),
                         iv: "sharded"
                     })
@@ -146,37 +140,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- RETRY WRAPPER ---
-    async function uploadShardWithRetry(data, sigData, shardId, retries = 3) {
+    async function uploadShardWithRetry(data, sigData, retries = 3) {
         try {
-            return await uploadShardToCloudinary(data, sigData, shardId);
+            return await uploadShardToCloudinary(data, sigData);
         } catch (err) {
             if (retries > 0) {
                 console.warn(`Shard failed. Retrying... (${retries} left)`);
                 await new Promise(r => setTimeout(r, 1000));
-                return uploadShardWithRetry(data, sigData, shardId, retries - 1);
+                return uploadShardWithRetry(data, sigData, retries - 1);
             } else {
                 throw err;
             }
         }
     }
 
-    // --- BASE UPLOADER (Fixed for RAW) ---
-    function uploadShardToCloudinary(data, sigData, shardId) {
+    // --- BASE UPLOADER (Forcing RAW & .dat) ---
+    function uploadShardToCloudinary(data, sigData) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             
-            // FIX 1: Use 'raw' instead of 'auto' to prevent processing delays
+            // 1. Force RAW resource type
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/raw/upload`;
             
             xhr.open("POST", url, true);
 
             const formData = new FormData();
-            // FIX 2: Add .bin extension so Cloudinary knows it's binary data
-            formData.append("file", new Blob([data]), "shard.bin");
+            // 2. Use .dat extension which is universally accepted as generic data
+            formData.append("file", new Blob([data]), "shard.dat");
             formData.append("api_key", sigData.apiKey);
             formData.append("timestamp", sigData.timestamp);
             formData.append("signature", sigData.signature);
-            formData.append("folder", "quantc_files");
+            formData.append("folder", "quantc_shards");
 
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
@@ -222,7 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     updateLoadingText(`Downloading Shard ${i+1}/${totalShards}...`);
                     
                     const url = metaData.parts[i];
-                    // FIX 3: mode: 'cors' ensures we can fetch across domains
+                    // cache: no-store prevents caching stale/partial data
                     const res = await fetch(url, { cache: "no-store", mode: 'cors' });
                     
                     if (!res.ok) throw new Error(`Shard ${i+1} download failed: ${res.status}`);
@@ -272,7 +266,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- UTILS & UI ---
+    // --- UTILS ---
     function showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
         if (!container) return; 

@@ -27,12 +27,11 @@ mongoose
 const fileSchema = new mongoose.Schema({
   code: { type: String, unique: true },
   passwordHash: String,
-  parts: [String], // ARRAY of URLs (The Shards)
-  cloudinaryPublicId: String, // Base ID
+  parts: [String], // Array of shard URLs
   originalName: String,
   mimeType: String,
   salt: String,
-  iv: String,
+  iv: String, // "sharded" or specific IV
   createdAt: { type: Date, expires: '48h', default: Date.now }
 });
 
@@ -47,16 +46,13 @@ api.get("/health", (req, res) => res.json({ status: "alive" }));
 // 2. SIGNATURE ENDPOINT
 api.post("/sign-upload", (req, res) => {
   const timestamp = Math.round((new Date).getTime() / 1000);
-  const { folder_id } = req.body; 
-
+  
+  // We strictly sign these parameters
   const paramsToSign = {
     timestamp: timestamp,
-    folder: 'quantc_files', // All shards go here
+    folder: 'quantc_shards', 
   };
   
-  // We don't sign public_id anymore because we generate random IDs for each shard
-  // This allows parallel uploads of shards without conflict
-
   const signature = cloudinary.utils.api_sign_request(
     paramsToSign, 
     process.env.CLOUDINARY_API_SECRET
@@ -70,10 +66,14 @@ api.post("/sign-upload", (req, res) => {
   });
 });
 
-// 3. FINALIZE UPLOAD (Saves the list of shard URLs)
+// 3. FINALIZE UPLOAD
 api.post("/finalize-upload", async (req, res) => {
   try {
-    const { password, originalName, mimeType, parts, publicId, salt, iv } = req.body;
+    const { password, originalName, mimeType, parts, salt, iv } = req.body;
+
+    if (!parts || parts.length === 0) {
+      return res.status(400).json({ success: false, message: "No file parts received." });
+    }
 
     let code;
     let exists = true;
@@ -87,8 +87,7 @@ api.post("/finalize-upload", async (req, res) => {
     await File.create({
       code,
       passwordHash,
-      parts, // Save all the URLs
-      cloudinaryPublicId: publicId,
+      parts,
       originalName,
       mimeType,
       salt,
@@ -115,7 +114,7 @@ api.post("/retrieve-meta", async (req, res) => {
 
     res.json({
       success: true,
-      parts: file.parts, // Send back the list of URLs
+      parts: file.parts,
       originalName: file.originalName,
       mimeType: file.mimeType,
       salt: file.salt,
