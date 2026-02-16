@@ -1,9 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
     // --- CONFIGURATION ---
-    const API_BASE_URL = 'https://quantc.onrender.com'; 
-    const SHARD_SIZE = 9 * 1024 * 1024; // 9MB (Safe zone for Cloudinary Free)
+    const API_BASE_URL = 'https://quantc-3.onrender.com'; // Update with your Render URL
+    const SHARD_SIZE = 9 * 1024 * 1024; // 9MB Chunks (Safe for Free Tier)
 
-    // Wake up the server immediately
+    // Wake up server
     fetch(`${API_BASE_URL}/api/health`).catch(() => {});
 
     // --- DOM ELEMENTS ---
@@ -16,6 +16,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const dropZone = document.querySelector(".drop-trigger");
     const uploadCard = document.getElementById("upload-card");
     const retrieveCard = document.getElementById("retrieve-card");
+    const resetUploadBtn = document.getElementById("reset-upload-btn");
+    const copyBtn = document.getElementById("copy-btn");
+    const uploadModeBtn = document.getElementById("upload-mode-btn");
+    const retrieveModeBtn = document.getElementById("retrieve-mode-btn");
 
     // --- CRYPTO HELPERS ---
     async function deriveKey(password, salt) {
@@ -54,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const sigRes = await fetch(`${API_BASE_URL}/api/sign-upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({}) // No params needed for folder-only signature
+                    body: JSON.stringify({})
                 });
                 const sigData = await sigRes.json();
                 if(!sigData.signature) throw new Error("Server signature failed");
@@ -67,7 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 let currentShard = 0;
                 let uploadedUrls = [];
 
-                // 3. Process Shards
+                // 3. Process & Upload Chunks
                 for (let start = 0; start < file.size; start += SHARD_SIZE) {
                     currentShard++;
                     const end = Math.min(start + SHARD_SIZE, file.size);
@@ -83,14 +87,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         { name: "AES-GCM", iv: iv }, key, chunkBuffer
                     );
 
-                    // Combine IV (12 bytes) + Encrypted Data
+                    // Combine IV + Data
                     const combinedBuffer = new Uint8Array(iv.length + encryptedChunk.byteLength);
                     combinedBuffer.set(iv);
                     combinedBuffer.set(new Uint8Array(encryptedChunk), iv.length);
 
                     updateLoadingText(`Uploading Part ${currentShard}/${totalShards}...`);
                     
-                    // Upload via XHR for raw binary support
+                    // Upload Shard
                     const response = await uploadShard(combinedBuffer, sigData);
                     uploadedUrls.push(response.secure_url);
                 }
@@ -118,6 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     uploadResult.classList.remove('hidden');
                     generatedCodeSpan.innerText = finalData.code;
                     showToast("Upload Complete!", "success");
+                    gsap.fromTo("#upload-result", {opacity: 0, y: 20}, {opacity: 1, y: 0, duration: 0.5});
                 } else {
                     showToast("Save Failed", "error");
                 }
@@ -130,17 +135,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Helper: Upload Shard (Retries built-in via recursion if needed, kept simple here)
+    // Helper: Upload Shard (XHR for Raw Binary Support)
     function uploadShard(data, sigData) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            // Force RAW upload so Cloudinary doesn't process it
             const url = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/raw/upload`;
             
             xhr.open("POST", url, true);
             const formData = new FormData();
-            // Use .dat extension to ensure it is treated as generic binary
-            formData.append("file", new Blob([data]), "shard.dat");
+            formData.append("file", new Blob([data]), "shard.dat"); // .dat extension is key!
             formData.append("api_key", sigData.apiKey);
             formData.append("timestamp", sigData.timestamp);
             formData.append("signature", sigData.signature);
@@ -182,7 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     updateLoadingText(`Downloading Part ${i+1}/${metaData.parts.length}...`);
                     
                     const rawUrl = metaData.parts[i];
-                    // USE PROXY to bypass CORS/Network blocks
+                    // USE PROXY to bypass CORS
                     const proxyUrl = `${API_BASE_URL}/api/proxy?url=${encodeURIComponent(rawUrl)}`;
                     
                     const res = await fetch(proxyUrl);
@@ -191,7 +194,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     updateLoadingText(`Decrypting Part ${i+1}...`);
                     
-                    // Extract IV (first 12 bytes) & Data
                     const iv = buffer.slice(0, 12);
                     const data = buffer.slice(12);
 
@@ -259,22 +261,41 @@ document.addEventListener("DOMContentLoaded", () => {
         if(visibleLoader) visibleLoader.innerText = text;
     }
 
-    // Standard Animation / UI Logic
-    function playEntranceAnimations() {
-        try {
-            const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
-            gsap.set(".nav-brand, .nav-btn", { x: -60, autoAlpha: 0 });
-            gsap.set(".main-heading", { y: 50, autoAlpha: 0 });
-            gsap.set(".glass-hub:not(.hidden)", { scale: 0.95, autoAlpha: 0, y: 30 });
-            tl.to(".nav-brand, .nav-btn", { x: 0, autoAlpha: 1, duration: 1.2, stagger: 0.1 })
-              .to(".main-heading", { y: 0, autoAlpha: 1, duration: 1 }, "-=0.8")
-              .to(".glass-hub:not(.hidden)", { scale: 1, y: 0, autoAlpha: 1, duration: 1.2 }, "-=0.7");
-        } catch (e) { console.error("GSAP Error:", e); }
-    }
-    playEntranceAnimations();
+    // --- ANIMATIONS & INTERACTIONS ---
+    if(resetUploadBtn) resetUploadBtn.addEventListener('click', () => {
+        uploadResult.classList.add('hidden');
+        uploadForm.classList.remove('hidden');
+        uploadForm.reset();
+        fileNameDisplay.innerText = "Initialize Packet";
+        generatedCodeSpan.innerText = ""; 
+        gsap.fromTo(uploadForm, {opacity: 0}, {opacity: 1, duration: 0.5});
+    });
 
-    const uploadModeBtn = document.getElementById("upload-mode-btn");
-    const retrieveModeBtn = document.getElementById("retrieve-mode-btn");
+    if(copyBtn) copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(generatedCodeSpan.innerText);
+        showToast("Code copied", "success");
+        gsap.to(copyBtn, { scale: 1.3, duration: 0.1, yoyo: true, repeat: 1 });
+    });
+    
+    if(dropZone) {
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault(); dropZone.classList.remove('drag-active');
+            if (e.dataTransfer.files.length > 0) { fileInput.files = e.dataTransfer.files; updateFileName(e.dataTransfer.files[0]); }
+        });
+    }
+    
+    if(fileInput) fileInput.addEventListener("change", (e) => {
+        if (e.target.files.length > 0) updateFileName(e.target.files[0]);
+    });
+    
+    function updateFileName(file) {
+        const name = file.name;
+        fileNameDisplay.innerText = name.length > 20 ? name.substring(0, 17) + "..." : name;
+        gsap.fromTo(fileNameDisplay, { scale: 0.8, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 });
+    }
+
     function setMode(mode) {
         const target = mode === "upload" ? uploadCard : retrieveCard;
         const other = mode === "upload" ? retrieveCard : uploadCard;
@@ -287,38 +308,22 @@ document.addEventListener("DOMContentLoaded", () => {
         uploadModeBtn.classList.toggle("active", mode === "upload");
         retrieveModeBtn.classList.toggle("active", mode === "retrieve");
     }
+    
     uploadModeBtn.addEventListener("click", () => setMode("upload"));
     retrieveModeBtn.addEventListener("click", () => setMode("retrieve"));
 
-    const resetUploadBtn = document.getElementById("reset-upload-btn");
-    if(resetUploadBtn) resetUploadBtn.addEventListener('click', () => {
-        uploadResult.classList.add('hidden');
-        uploadForm.classList.remove('hidden');
-        uploadForm.reset();
-        fileNameDisplay.innerText = "Initialize Packet";
-        generatedCodeSpan.innerText = ""; 
-    });
-    const copyBtn = document.getElementById("copy-btn");
-    if(copyBtn) copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(generatedCodeSpan.innerText);
-        showToast("Code copied", "success");
-    });
-    
-    if(dropZone) {
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault(); dropZone.classList.remove('drag-active');
-            if (e.dataTransfer.files.length > 0) { fileInput.files = e.dataTransfer.files; updateFileName(e.dataTransfer.files[0]); }
-        });
-    }
-    if(fileInput) fileInput.addEventListener("change", (e) => {
-        if (e.target.files.length > 0) updateFileName(e.target.files[0]);
-    });
-    function updateFileName(file) {
-        const name = file.name;
-        fileNameDisplay.innerText = name.length > 20 ? name.substring(0, 17) + "..." : name;
-    }
+    // Intro Animation
+    try {
+        const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
+        gsap.set(".nav-brand, .nav-btn", { x: -60, autoAlpha: 0 });
+        gsap.set(".main-heading", { y: 50, autoAlpha: 0 });
+        gsap.set(".glass-hub:not(.hidden)", { scale: 0.95, autoAlpha: 0, y: 30 });
+        tl.to(".nav-brand, .nav-btn", { x: 0, autoAlpha: 1, duration: 1.2, stagger: 0.1 })
+          .to(".main-heading", { y: 0, autoAlpha: 1, duration: 1 }, "-=0.8")
+          .to(".glass-hub:not(.hidden)", { scale: 1, y: 0, autoAlpha: 1, duration: 1.2 }, "-=0.7");
+    } catch (e) { console.error("GSAP Error:", e); }
+
+    // Background Parallax
     let mouse = { x: 0, y: 0 }, current = { x: 0, y: 0 };
     document.addEventListener('mousemove', (e) => {
         mouse.x = (e.clientX / window.innerWidth) - 0.5;
