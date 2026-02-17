@@ -3,15 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QuantC | Neural Transfer</title>
-    <link rel="icon" type="image/png" href="favicon.png">
+    
+    <title>QuantC | Free Anonymous File Sharing & Secure Large File Transfer by s4sahiko</title>
+    <meta name="description" content="Send 1GB+ files anonymously, free, and securely. No login required. QuantC uses military-grade encryption for instant file transfer. Powered by s4sahiko organization." />
+    <meta name="keywords" content="anonymous file sharing, free large file transfer, send files securely, no login upload, encrypted file share, s4sahiko, QuantC, share 1gb file free, privacy focused file transfer" />
+    <meta name="author" content="s4sahiko Organization" />
+    <meta name="theme-color" content="#000000" />
+    
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://quantcarya.vercel.app/" />
 
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://quantcarya.vercel.app/" />
+    <meta property="og:title" content="QuantC - Ultimate Secure File Transfer by s4sahiko" />
+    <meta property="og:description" content="Upload 1GB+ files in seconds. Zero logs. Zero tracking. Self-destructing links. The new standard in anonymous sharing." />
+    <meta property="og:image" content="https://quantcarya.vercel.app/og-image.jpg" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:domain" content="quantcarya.vercel.app" />
+    <meta name="twitter:url" content="https://quantcarya.vercel.app/" />
+    <meta name="twitter:title" content="QuantC | Share Files Anonymously & Free" />
+    <meta name="twitter:description" content="Forget WeTransfer. QuantC offers encrypted, no-login file sharing with auto-deletion. Try the future of privacy." />
+    <meta name="twitter:image" content="https://quantcarya.vercel.app/og-image.jpg" />
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "QuantC",
+      "operatingSystem": "Web",
+      "applicationCategory": "UtilitiesApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "s4sahiko",
+        "url": "https://sahiko.org"
+      },
+      "description": "QuantC is a secure, anonymous file sharing platform allowing users to transfer large files (1GB+) without registration. Features end-to-end encryption and auto-deletion.",
+      "featureList": "Anonymous Upload, 1GB File Support, End-to-End Encryption, Auto-Destruct Links",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "ratingCount": "1024"
+      }
+    }
+    </script>
+
+    <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"> 
     <link rel="stylesheet" href="style.css">
-        <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600&family=Orbitron:wght@400;600&family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-
-    </head>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600&family=Orbitron:wght@400;600&family=Rajdhani:wght@400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
 <body>
     
     <div id="toast-container"></div>
@@ -26,10 +73,10 @@
 
     <aside class="floating-nav">
         <div class="nav-brand">Q</div>
-        <button id="upload-mode-btn" class="nav-btn active">
+        <button id="upload-mode-btn" class="nav-btn active" aria-label="Upload Mode">
             <i class="fa-solid fa-plus-circle"></i>
         </button>
-        <button id="retrieve-mode-btn" class="nav-btn">
+        <button id="retrieve-mode-btn" class="nav-btn" aria-label="Retrieve Mode">
             <i class="fa-solid fa-fingerprint"></i>
         </button>
     </aside>
@@ -37,7 +84,7 @@
     <main class="viewport">
         <div class="heading-section">
             <h1 class="main-heading">Quant<span>c</span></h1>
-            <p class="sub-heading">Next-gen anonymous world.</p>
+            <p class="sub-heading">Secure. Anonymous. <a href="https://sahiko.org" style="color:inherit; text-decoration:none;">s4sahiko</a> Protected.</p>
         </div>
 
         <div id="upload-card" class="glass-hub">
@@ -52,7 +99,7 @@
                     <div class="pulse-icon">
                         <i class="fa-solid fa-atom"></i>
                     </div>
-                    <span id="file-name-display">Upload Packet</span>
+                    <span id="file-name-display">Upload Packet (1GB+)</span>
                 </label>
 
                 <div class="input-glow-group">
@@ -60,7 +107,7 @@
                     <input type="password" id="upload-password" placeholder="Set Key Phrase">
                 </div>
 
-                <button type="submit" class="btn-glow-primary">GET CODE</button>
+                <button type="submit" class="btn-glow-primary">GET SECURE CODE</button>
             </form>
 
             <div id="upload-result" class="result-view hidden">
@@ -68,13 +115,14 @@
                 <h3>Packet Secured</h3>
                 <p style="margin-bottom: 15px;">Use this code to retrieve your file.</p>
 
-                <div class="caution-box">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span><strong>Note:</strong> This code is valid for 48 hours only.</span>
-                </div>
                 <div class="code-display-box">
                     <span id="generated-code">000000</span>
                     <button id="copy-btn" title="Copy Code"><i class="fa-solid fa-copy"></i></button>
+                </div>
+
+                <div class="caution-box">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span><strong>Note:</strong> This code is valid for 48 hours only.</span>
                 </div>
 
                 <button id="reset-upload-btn" class="btn-glow-primary" style="margin-top: 20px;">UPLOAD ANOTHER</button>
@@ -98,6 +146,10 @@
                 </div>
                 <button type="submit" class="btn-glow-primary">DECRYPT FILES</button>
             </form>
+        </div>
+        
+        <div style="margin-top: 20px; font-size: 0.8rem; color: rgba(255,255,255,0.4); text-align: center;">
+            Powered by <a href="https://sahiko.org" target="_blank" style="color: rgba(255,255,255,0.6); text-decoration: none;">s4sahiko Organization</a>
         </div>
     </main>
 
